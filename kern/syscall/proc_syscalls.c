@@ -14,6 +14,7 @@
 #include <proc.h>
 #include <thread.h>
 #include <addrspace.h>
+#include <current.h>
 
 /*
  * simple proc management system calls
@@ -29,4 +30,12 @@ sys__exit(int status)
 
   panic("thread_exit returned (should not happen)\n");
   (void) status; // TODO: status handling
+}
+
+int 
+sys_getpid(void)
+{
+  struct proc *proc = curproc;
+  
+  return proc->p_pid;
 }

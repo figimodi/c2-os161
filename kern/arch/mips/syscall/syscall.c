@@ -108,7 +108,12 @@ syscall(struct trapframe *tf)
 				 (userptr_t)tf->tf_a1);
 		break;
 
-	    /* Add stuff here */
+		case SYS_getpid:
+		retval = sys_getpid();
+		kprintf("\n\nTHE PROCESS ID IS: %d\n\n", retval);
+		if (retval < 0) err = ENOSYS;
+		break;
+
 #if OPT_SYSCALLS
 	    case SYS_write:
 	        retval = sys_write((int)tf->tf_a0,

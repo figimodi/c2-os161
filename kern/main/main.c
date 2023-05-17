@@ -51,7 +51,7 @@
 #include <version.h>
 #include "autoconf.h"  // for pseudoconfig
 
-#include "hello.h" 
+#include <../arch/mips/include/trapframe.h> // per testing
 
 /*
  * These two pieces of data are maintained by the makefiles and build system.
@@ -210,9 +210,13 @@ void
 kmain(char *arguments)
 {
 	boot();
-#if OPT_HELLO
-	hello();
-#endif
+
+	// dumb test for getpid (TODO: remove)
+	struct trapframe tf;
+
+	tf.tf_v0 = 5; // SYS_getpid = 5
+	syscall(&tf);
+
 	menu(arguments);
 
 	/* Should not get here */

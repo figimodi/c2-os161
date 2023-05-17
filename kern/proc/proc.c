@@ -55,6 +55,11 @@
 struct proc *kproc;
 
 /*
+ * The id of the next process that will be created
+ */
+int pid_count = 123;
+
+/*
  * Create a proc structure.
  */
 static
@@ -81,6 +86,8 @@ proc_create(const char *name)
 
 	/* VFS fields */
 	proc->p_cwd = NULL;
+
+	proc->p_pid = pid_count++;
 
 	return proc;
 }
