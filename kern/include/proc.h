@@ -37,6 +37,7 @@
  */
 
 #include <spinlock.h>
+#include "opt-syscalls.h"
 
 struct addrspace;
 struct thread;
