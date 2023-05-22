@@ -54,10 +54,82 @@
  */
 struct proc *kproc;
 
-/*
- * The id of the next process that will be created
- */
-int pid_count = 123;
+#if OPT_SYSCALLS
+#include <synch.h>
+
+#define MAX_PROC 100
+static struct _processTable {
+  int active;           /* initial value 0 */
+  struct proc *proc[MAX_PROC+1]; /* [0] not used. pids are >= 1 */
+  int last_i;           /* index of last allocated pid */
+  struct spinlock lk;	/* Lock for this table */
+} processTable;
+
+#endif
+
+struct proc *
+proc_search_pid(pid_t pid) {
+#if OPT_SYSCALLS
+  struct proc *p;
+  KASSERT(pid>=0&&pid<MAX_PROC);
+  p = processTable.proc[pid];
+  KASSERT(p->p_pid==pid);
+  return p;
+#else
+  (void)pid;
+  return NULL;
+#endif
+}
+
+static void
+proc_init(struct proc *proc, const char *name) {
+#if OPT_SYSCALLS
+  /* search a free index in table using a circular strategy */
+  int i;
+  spinlock_acquire(&processTable.lk);
+  i = processTable.last_i+1;
+  proc->p_pid = 0;
+  if (i>MAX_PROC) i=1;
+  while (i!=processTable.last_i) {
+    if (processTable.proc[i] == NULL) {
+      processTable.proc[i] = proc;
+      processTable.last_i = i;
+      proc->p_pid = i;
+      break;
+    }
+    i++;
+    if (i>MAX_PROC) i=1;
+  }
+  spinlock_release(&processTable.lk);
+  if (proc->p_pid==0) {
+    panic("too many processes. proc table is full\n");
+  }
+  proc->p_status = 0;
+  proc->p_sem = sem_create(name, 0);
+
+#else
+  (void)proc;
+  (void)name;
+#endif
+}
+
+static void
+proc_end(struct proc *proc) {
+#if OPT_SYSCALLS
+  /* remove the process from the table */
+  int i;
+  spinlock_acquire(&processTable.lk);
+  i = proc->p_pid;
+  KASSERT(i>0 && i<=MAX_PROC);
+  processTable.proc[i] = NULL;
+  spinlock_release(&processTable.lk);
+
+  sem_destroy(proc->p_sem);
+
+#else
+  (void)proc;
+#endif
+}
 
 /*
  * Create a proc structure.
@@ -87,9 +159,31 @@ proc_create(const char *name)
 	/* VFS fields */
 	proc->p_cwd = NULL;
 
-	proc->p_pid = pid_count++;
+	proc_init(proc, name);
 
 	return proc;
+}
+
+int 
+proc_wait(struct proc *proc)
+{
+#if OPT_SYSCALLS
+	int return_status;
+	/* NULL and kernel proc forbidden */
+	KASSERT(proc != NULL);
+	KASSERT(proc != kproc);
+
+	/* wait on semaphore */ 
+	P(proc->p_sem);
+
+	return_status = proc->p_status;
+	proc_destroy(proc);
+	return return_status;
+#else
+	/* this doesn't synchronize */ 
+	(void)proc;
+	return 0;
+#endif
 }
 
 /*
@@ -175,6 +269,8 @@ proc_destroy(struct proc *proc)
 	KASSERT(proc->p_numthreads == 0);
 	spinlock_cleanup(&proc->p_lock);
 
+	proc_end(proc);
+
 	kfree(proc->p_name);
 	kfree(proc);
 }
@@ -189,6 +285,12 @@ proc_bootstrap(void)
 	if (kproc == NULL) {
 		panic("proc_create for kproc failed\n");
 	}
+
+#if OPT_SYSCALLS
+	spinlock_init(&processTable.lk);
+	/* kernel process is not registered in the table */
+	processTable.active = 1;
+#endif
 }
 
 /*

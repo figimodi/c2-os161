@@ -210,13 +210,7 @@ void
 kmain(char *arguments)
 {
 	boot();
-
-	// dumb test for getpid (TODO: remove)
-	struct trapframe tf;
-
-	tf.tf_v0 = 5; // SYS_getpid = 5
-	syscall(&tf);
-
+	
 	menu(arguments);
 
 	/* Should not get here */
