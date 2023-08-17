@@ -109,6 +109,25 @@ syscall(struct trapframe *tf)
 				 (userptr_t)tf->tf_a1);
 		break;
 
+	/*
+	TODO:
+		-open
+		-read
+		-write (works only for stdout)
+		-lseek (works only for stdin)
+		-close
+		-dup2
+		-getcwd
+		-chdir
+
+		-getpid (implementazione di cabodi funziona)
+
+		-fork (pare funzionasse, ricontrollare)
+		-execv
+		-waitpid (fatta ma da controllare)
+		-_exit (fatta ma controllare da capo)
+	*/
+
 #if OPT_SYSCALLS
 	    case SYS_write:
 	        retval = sys_write((int)tf->tf_a0,

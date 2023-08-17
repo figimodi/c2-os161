@@ -795,7 +795,7 @@ thread_exit(void)
 	thread_checkstack(cur);
 
 	/* Interrupts off on this processor */
-        splhigh();
+    splhigh();
 	thread_switch(S_ZOMBIE, NULL, NULL);
 	panic("braaaaaaaiiiiiiiiiiinssssss\n");
 }
