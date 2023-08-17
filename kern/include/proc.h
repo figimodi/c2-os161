@@ -38,6 +38,7 @@
 
 #include <spinlock.h>
 #include "opt-syscalls.h"
+#include <limits.h>
 
 struct addrspace;
 struct thread;
@@ -75,6 +76,7 @@ struct proc {
 	int p_status;                   /* status as obtained by exit() */
 	pid_t p_pid;
 	struct semaphore *p_sem;
+	struct openfile *fileTable[OPEN_MAX];
 #endif
 };
 
@@ -107,5 +109,8 @@ int proc_wait(struct proc *proc);
 /* get proc from pid */
 struct proc *proc_search_pid(pid_t pid);
 
+void proc_signal_end(struct proc *proc);
+
+void proc_file_table_copy(struct proc *psrc, struct proc *pdest);
 
 #endif /* _PROC_H_ */

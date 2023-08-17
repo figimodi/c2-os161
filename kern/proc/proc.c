@@ -48,6 +48,7 @@
 #include <current.h>
 #include <addrspace.h>
 #include <vnode.h>
+#include <syscall.h>
 
 /*
  * The process for the kernel; this holds all the kernel-only threads.
@@ -426,4 +427,23 @@ proc_setas(struct addrspace *newas)
 	proc->p_addrspace = newas;
 	spinlock_release(&proc->p_lock);
 	return oldas;
+}
+
+void 
+proc_signal_end(struct proc *proc)
+{
+    V(proc->p_sem);
+}
+
+void 
+proc_file_table_copy(struct proc *psrc, struct proc *pdest) {
+  int fd;
+  for (fd=0; fd<OPEN_MAX; fd++) {
+    struct openfile *of = psrc->fileTable[fd];
+    pdest->fileTable[fd] = of;
+    if (of != NULL) {
+      /* incr reference count */
+      openfileIncrRefCount(of);
+    }
+  }
 }
