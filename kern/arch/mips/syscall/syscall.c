@@ -141,10 +141,8 @@ syscall(struct trapframe *tf)
 			break;
 		case SYS_lseek:
 			retval = sys_lseek((int)tf->tf_a0,
-				(off_t)tf->tf_a1,
-				(int)tf->tf_a2);
-			if (retval<0) err = ENOSYS;
-			else err = 0;
+				(int)tf->tf_a1,
+				(int)tf->tf_a2, &err);
 			break;
 		case SYS_dup2:
 			retval = sys_dup2((int)tf->tf_a0,

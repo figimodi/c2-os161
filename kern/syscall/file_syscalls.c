@@ -7,6 +7,7 @@
 #include <types.h>
 #include <kern/unistd.h>
 #include <kern/errno.h>
+#include <kern/seek.h>
 #include <clock.h>
 #include <syscall.h>
 #include <current.h>
@@ -292,13 +293,46 @@ sys_read(int fd, userptr_t buf_ptr, size_t size)
 }
 
 int
-sys_lseek(int fd, off_t offset, int whence) {
+sys_lseek(int fd, int offset, int whence, int *errp) {
   #if OPT_SYSCALLS
-  int x = fd;
-  off_t y = offset;
-  int z = whence;
-  return x*y*z;
-  //TODO
+  if (fd < 0 || fd > OPEN_MAX || curproc->fileTable[fd] == NULL) { *errp=EBADF; return -1; }
+  
+  int nread = 0;
+  char buffer[256];
+  int cur_offset = 0;
+  struct openfile *of = curproc->fileTable[fd];
+  
+  cur_offset = of->offset;
+  of->offset = 0;
+  do
+    nread += sys_read(fd, (userptr_t)buffer, 256);
+  while(nread %= 256);
+  of->offset = cur_offset;
+
+  switch (whence)
+  {
+    case SEEK_SET:
+      of->offset = offset;
+      break;
+
+    case SEEK_CUR:
+      of->offset += offset;
+      break;
+
+    case SEEK_END:
+      of->offset = nread + offset;
+      break;
+    
+    default:
+      *errp = EINVAL;
+      return -1;
+  }
+  
+  if (of->offset > nread) 
+    of->offset = nread;
+
+  return of->offset;
+
   #endif
 
   return -1;
