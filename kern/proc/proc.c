@@ -162,6 +162,10 @@ proc_create(const char *name)
 
 	proc_init(proc, name);
 
+#if OPT_SYSCALLS
+	bzero(proc->fileTable,OPEN_MAX*sizeof(struct openfile *));
+#endif
+
 	return proc;
 }
 
@@ -435,6 +439,7 @@ proc_signal_end(struct proc *proc)
     V(proc->p_sem);
 }
 
+#if OPT_SYSCALLS
 void 
 proc_file_table_copy(struct proc *psrc, struct proc *pdest) {
   int fd;
@@ -447,3 +452,5 @@ proc_file_table_copy(struct proc *psrc, struct proc *pdest) {
     }
   }
 }
+
+#endif

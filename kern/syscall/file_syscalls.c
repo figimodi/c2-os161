@@ -11,13 +11,13 @@
 #include <syscall.h>
 #include <current.h>
 #include <lib.h>
-
 #include <copyinout.h>
 #include <vnode.h>
 #include <vfs.h>
 #include <limits.h>
 #include <uio.h>
 #include <proc.h>
+
 
 /* max num of system wide open files */
 #define SYSTEM_OPEN_MAX (10*OPEN_MAX)
@@ -100,6 +100,7 @@ file_write(int fd, userptr_t buf_ptr, size_t size) {
 
 static int
 file_read(int fd, userptr_t buf_ptr, size_t size) {
+  #if OPT_SYSCALLS
   struct iovec iov;
   struct uio u;
   int result;
@@ -130,13 +131,15 @@ file_read(int fd, userptr_t buf_ptr, size_t size) {
 
   of->offset = u.uio_offset;
   return (size - u.uio_resid);
+  #endif
 }
 
 static int
 file_write(int fd, userptr_t buf_ptr, size_t size) {
+  #if OPT_SYSCALLS
   struct iovec iov;
   struct uio u;
-  int result, nwrite;
+  int result;
   struct vnode *vn;
   struct openfile *of;
 
@@ -161,9 +164,10 @@ file_write(int fd, userptr_t buf_ptr, size_t size) {
   if (result) {
     return result;
   }
+
   of->offset = u.uio_offset;
-  nwrite = size - u.uio_resid;
-  return (nwrite);
+  return (size - u.uio_resid);
+  #endif
 }
 
 #endif
@@ -174,6 +178,7 @@ file_write(int fd, userptr_t buf_ptr, size_t size) {
 int
 sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
 {
+  #if OPT_SYSCALLS
   int fd, i;
   struct vnode *v;
   struct openfile *of=NULL;; 	
@@ -201,8 +206,8 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
   else {
     for (fd=STDERR_FILENO+1; fd<OPEN_MAX; fd++) {
       if (curproc->fileTable[fd] == NULL) {
-	curproc->fileTable[fd] = of;
-	return fd;
+        curproc->fileTable[fd] = of;
+        return fd;
       }
     }
     // no free slot in process open file table
@@ -210,6 +215,8 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
   }
   
   vfs_close(v);
+  #endif
+
   return -1;
 }
 
@@ -219,6 +226,7 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
 int
 sys_close(int fd)
 {
+  #if OPT_SYSCALLS
   struct openfile *of=NULL; 
   struct vnode *vn;
 
@@ -233,6 +241,8 @@ sys_close(int fd)
   if (vn==NULL) return -1;
 
   vfs_close(vn);	
+  #endif
+
   return 0;
 }
 
@@ -242,6 +252,7 @@ sys_close(int fd)
 int
 sys_write(int fd, userptr_t buf_ptr, size_t size)
 {
+  #if OPT_SYSCALLS
   int i;
   char *p = (char *)buf_ptr;
 
@@ -253,11 +264,15 @@ sys_write(int fd, userptr_t buf_ptr, size_t size)
   }
 
   return (int)size;
+  #endif
+
+  return 0;
 }
 
 int
 sys_read(int fd, userptr_t buf_ptr, size_t size)
 {
+  #if OPT_SYSCALLS
   int i;
   char *p = (char *)buf_ptr;
 
@@ -271,4 +286,60 @@ sys_read(int fd, userptr_t buf_ptr, size_t size)
   }
 
   return (int)size;
+  #endif
+
+  return 0;
+}
+
+int
+sys_lseek(int fd, off_t offset, int whence) {
+  #if OPT_SYSCALLS
+  int x = fd;
+  off_t y = offset;
+  int z = whence;
+  return x*y*z;
+  //TODO
+  #endif
+
+  return -1;
+}
+
+int
+sys_dup2(int oldfd, int newfd, int *errp) {
+  #if OPT_SYSCALLS
+  if (newfd<STDERR_FILENO || newfd>OPEN_MAX) { *errp=EBADF; return -1; }
+  if (oldfd<STDERR_FILENO || oldfd>OPEN_MAX || curproc->fileTable[oldfd]==NULL) { *errp=EBADF; return -1; }
+  if (oldfd==newfd) return newfd;
+
+  sys_close(newfd);
+
+  struct openfile *of = curproc->fileTable[oldfd];
+  curproc->fileTable[newfd] = of;
+  openfileIncrRefCount(of);
+
+  return newfd;
+
+  #endif
+
+  return -1;
+}
+
+int
+sys_getcwd(char *buf, size_t size, char *retval) {
+    #if OPT_SYSCALLS
+    kprintf("%s, %d, %s", buf, size, retval);
+    //TODO
+    #endif
+    
+    return (int)NULL;
+}
+
+int
+sys_chdir(const char *path) {
+    #if OPT_SYSCALLS
+    kprintf("%s", path);
+    //TODO
+    #endif
+
+    return 0;
 }

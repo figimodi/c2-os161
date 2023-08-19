@@ -82,7 +82,9 @@ call_enter_forked_process(void *tfv, unsigned long dummy) {
   panic("enter_forked_process returned (should not happen)\n");
 }
 
+
 int sys_fork(struct trapframe *ctf, pid_t *retval) {
+  #if OPT_SYSCALLS
   struct trapframe *tf_child;
   struct proc *newp;
   int result;
@@ -125,6 +127,18 @@ int sys_fork(struct trapframe *ctf, pid_t *retval) {
   }
 
   *retval = newp->p_pid;
+  #endif
+  
+  return 0;
+}
+
+int 
+sys_execv(const char *pathname, char *const argv[]) {
+  #if OPT_SYSCALLS
+  kprintf("%s", pathname);
+  kprintf("%s", argv[0]);
+  //TODO
+  #endif
 
   return 0;
 }
