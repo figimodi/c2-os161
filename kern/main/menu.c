@@ -79,22 +79,24 @@ cmd_progthread(void *ptr, unsigned long nargs)
 
 	KASSERT(nargs >= 1);
 
-	kprintf("printing all arguments...\n");
+	// kprintf("printing all arguments...\n");
 
-	unsigned int i=0;
-	for(;i < nargs; i++) {
-		kprintf("%s\n", args[i]);
-	}
+	// for(int i = 0; i < (int)nargs; i++) {
+	// 	kprintf("%s\n", args[i]);
+	// }
+
+
+	// if (nargs > 2) 
+	// 	result = runprogram_withargs(progname, args, nargs);
+	// else 
+	// 	result = runprogram(progname);
 
 	if (nargs > 2) {
-		strcpy(progname, args[0]);
-		runprogram_withargs(progname, args, nargs);
-		// kprintf("Warning: argument passing from menu not supported\n");
+		kprintf("Warning: argument passing from menu not supported\n");
 	}
 
 	/* Hope we fit. */
 	KASSERT(strlen(args[0]) < sizeof(progname));
-
 	strcpy(progname, args[0]);
 
 	result = runprogram(progname);
