@@ -50,14 +50,20 @@ main(void)
 	char buffer[128];
 	
 	testfile = open("fileprova", O_RDONLY, 0644);
-	nread = read(testfile, buffer, 128);
+	nread = read(testfile, buffer, 5);
 
 	printf("i read %d bytes: %s\n", nread, buffer);
 
-	offset = lseek(testfile, 8, SEEK_SET);
+	offset = lseek(testfile, 4, SEEK_SET);
 	printf("the offset is now %d\n", offset);
 
-	read(testfile, buffer, 128);
+	read(testfile, buffer, 5);
+	printf("i read %d bytes: %s\n", nread, buffer);
+
+	offset = lseek(testfile, -4, SEEK_END);
+	printf("the offset is now %d\n", offset);
+
+	read(testfile, buffer, 5);
 	printf("i read %d bytes: %s\n", nread, buffer);
 
 	return 0;

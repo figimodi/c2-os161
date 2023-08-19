@@ -81,7 +81,9 @@ syscall(struct trapframe *tf)
 	int callno;
 	int32_t retval;
 	char* retval_charptr;
-	int err = 0;
+	int err = 0, whence = 0;
+	off_t offset = 0;
+	int * stack = (int *)(tf->tf_sp+16);
 
 	KASSERT(curthread != NULL);
 	KASSERT(curthread->t_curspl == 0);
@@ -140,9 +142,16 @@ syscall(struct trapframe *tf)
 			else err = 0;
 			break;
 		case SYS_lseek:
+
+			offset = tf->tf_a2;
+			offset = offset<<32;
+			offset |= tf->tf_a3;
+
+			whence = *(stack);
+
 			retval = sys_lseek((int)tf->tf_a0,
-				(int)tf->tf_a1,
-				(int)tf->tf_a2, &err);
+				offset,
+				whence, &err);
 			break;
 		case SYS_dup2:
 			retval = sys_dup2((int)tf->tf_a0,

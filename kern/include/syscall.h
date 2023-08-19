@@ -69,7 +69,7 @@ int sys_open(userptr_t path, int openflags, mode_t mode, int *errp);
 int sys_close(int fd);
 int sys_write(int fd, userptr_t buf_ptr, size_t size);
 int sys_read(int fd, userptr_t buf_ptr, size_t size);
-int sys_lseek(int fd, int offset, int whence, int *errp);
+off_t sys_lseek(int fd, off_t offset, int whence, int *errp);
 int sys_dup2(int oldfd, int newfd, int *errp);
 void sys__exit(int status);
 int sys_waitpid(pid_t pid, userptr_t statusp, int options);

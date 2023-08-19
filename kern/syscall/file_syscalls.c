@@ -292,21 +292,30 @@ sys_read(int fd, userptr_t buf_ptr, size_t size)
   return 0;
 }
 
-int
-sys_lseek(int fd, int offset, int whence, int *errp) {
+off_t
+sys_lseek(int fd, off_t offset, int whence, int *errp) {
   #if OPT_SYSCALLS
   if (fd < 0 || fd > OPEN_MAX || curproc->fileTable[fd] == NULL) { *errp=EBADF; return -1; }
   
-  int nread = 0;
-  char buffer[256];
-  int cur_offset = 0;
+  int nread = 0, cur_read = 0;
+  char buffer[5];
+  off_t cur_offset = 0;
   struct openfile *of = curproc->fileTable[fd];
   
   cur_offset = of->offset;
   of->offset = 0;
-  do
-    nread += sys_read(fd, (userptr_t)buffer, 256);
-  while(nread %= 256);
+
+  while((cur_read = file_read(fd, (userptr_t)buffer, 5)) == 5){
+    nread += 5;
+  }
+
+  nread += cur_read;
+
+  // do
+  //   nread += sys_read(fd, (userptr_t)buffer, 5);
+  // while(nread %= 5);
+
+
   of->offset = cur_offset;
 
   switch (whence)
