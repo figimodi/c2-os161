@@ -307,8 +307,6 @@ sys_lseek(int fd, off_t offset, int whence, int *errp) {
   VOP_STAT(of->vn, &statbuf);
   file_size = statbuf.st_size;
 
-  kprintf("File is long: %d\n", (int)file_size);
-
   switch (whence)
   {
     case SEEK_SET:
@@ -345,7 +343,10 @@ sys_dup2(int oldfd, int newfd, int *errp) {
   if (oldfd<STDERR_FILENO || oldfd>OPEN_MAX || curproc->fileTable[oldfd]==NULL) { *errp=EBADF; return -1; }
   if (oldfd==newfd) return newfd;
 
-  sys_close(newfd);
+  if(curproc->fileTable[newfd] != NULL){
+    // close the file for this process
+    sys_close(newfd);
+  }
 
   struct openfile *of = curproc->fileTable[oldfd];
   curproc->fileTable[newfd] = of;

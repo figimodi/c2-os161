@@ -50,18 +50,37 @@ main(void)
 	char buffer[128];
 	
 	testfile = open("fileprova", O_RDONLY, 0644);
+
+	printf("**************lseek TEST***************\n");
+
 	nread = read(testfile, buffer, 5);
 
 	printf("Read %d bytes--->%s\n", nread, buffer);
 
 	printf("Skipping 2 chars...\n");
 
-
 	offset = lseek(testfile, 2, SEEK_CUR);
 	printf("Offset is now %d\n", offset);
 
 	read(testfile, buffer, 5);
 	printf("Read %d bytes--->%s\n", nread, buffer);
+
+	printf("**************dup2 TEST***************\n");
+	lseek(testfile, 0, SEEK_SET);
+	int newfd = 10;
+	newfd = dup2(testfile, newfd);
+
+	if(newfd == 10){
+		printf("dup2 worked, the new fd is: %d\n", newfd);
+	}else{
+		printf("dup2 did not work, the returned value is: %d\n", newfd);
+	}
+
+	read(newfd, buffer, 5);
+	printf("Read %d bytes--->%s\n", nread, buffer);
+
+	close(testfile);
+	close(newfd);
 
 	return 0;
 }
