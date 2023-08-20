@@ -298,7 +298,10 @@ sys_lseek(int fd, off_t offset, int whence, int *errp) {
   if (fd < 0 || fd > OPEN_MAX || curproc->fileTable[fd] == NULL) { *errp=EBADF; return -1; }
   
   int tot_read = 0, cur_read = 0;
-  char * buffer = kmalloc(10 * sizeof(char));
+  void *kbuf;
+
+  kbuf = kmalloc(256);
+  
   off_t cur_offset = 0;
   struct openfile *of = curproc->fileTable[fd];
   
@@ -306,14 +309,18 @@ sys_lseek(int fd, off_t offset, int whence, int *errp) {
   cur_offset = of->offset;
   of->offset = 0;
 
+  struct iovec iov;
+  struct uio ku;
+  uio_kinit(&iov, &ku, kbuf, 256, of->offset, UIO_READ);
+
   do{
-    cur_read = sys_read(fd, (userptr_t)buffer, 10);
+    VOP_READ(of->vn, &ku);
+    of->offset = ku.uio_offset;
+    cur_read = 256 - ku.uio_resid;
     tot_read += cur_read;
-  }while(cur_read == 10);
+  }while(cur_read == 256);
 
-  kfree(buffer);
-
-  kprintf("\nFile size is: %d\n", tot_read);
+  kfree(kbuf);
   
   of->offset = cur_offset;
 

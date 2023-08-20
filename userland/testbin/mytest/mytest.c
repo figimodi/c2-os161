@@ -52,19 +52,16 @@ main(void)
 	testfile = open("fileprova", O_RDONLY, 0644);
 	nread = read(testfile, buffer, 5);
 
-	printf("i read %d bytes: %s\n", nread, buffer);
+	printf("Read %d bytes--->%s\n", nread, buffer);
 
-	offset = lseek(testfile, 4, SEEK_SET);
-	printf("the offset is now %d\n", offset);
+	printf("Skipping 2 chars...\n");
 
-	read(testfile, buffer, 5);
-	printf("i read %d bytes: %s\n", nread, buffer);
 
-	offset = lseek(testfile, -4, SEEK_END);
-	printf("the offset is now %d\n", offset);
+	offset = lseek(testfile, 2, SEEK_CUR);
+	printf("Offset is now %d\n", offset);
 
 	read(testfile, buffer, 5);
-	printf("i read %d bytes: %s\n", nread, buffer);
+	printf("Read %d bytes--->%s\n", nread, buffer);
 
 	return 0;
 }
