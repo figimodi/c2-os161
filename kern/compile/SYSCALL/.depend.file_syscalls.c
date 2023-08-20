@@ -12,4 +12,5 @@ file_syscalls.o: ../../syscall/file_syscalls.c ../../include/types.h \
  includelinks/kern/machine/setjmp.h ../../include/copyinout.h \
  ../../include/vnode.h ../../include/vfs.h ../../include/limits.h \
  ../../include/kern/limits.h ../../include/uio.h \
- ../../include/kern/iovec.h ../../include/proc.h
+ ../../include/kern/iovec.h ../../include/proc.h ../../include/stat.h \
+ ../../include/kern/stat.h ../../include/kern/stattypes.h

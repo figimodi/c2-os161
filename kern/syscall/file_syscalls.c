@@ -18,6 +18,7 @@
 #include <limits.h>
 #include <uio.h>
 #include <proc.h>
+#include <stat.h>
 
 
 /* max num of system wide open files */
@@ -297,32 +298,16 @@ sys_lseek(int fd, off_t offset, int whence, int *errp) {
   #if OPT_SYSCALLS
   if (fd < 0 || fd > OPEN_MAX || curproc->fileTable[fd] == NULL) { *errp=EBADF; return -1; }
   
-  int tot_read = 0, cur_read = 0;
-  void *kbuf;
-
-  kbuf = kmalloc(256);
+  off_t file_size;
   
-  off_t cur_offset = 0;
   struct openfile *of = curproc->fileTable[fd];
-  
-  // we need to find file size in order to manage all flags and problems with overflow
-  cur_offset = of->offset;
-  of->offset = 0;
 
-  struct iovec iov;
-  struct uio ku;
-  uio_kinit(&iov, &ku, kbuf, 256, of->offset, UIO_READ);
+  // how long is the file?
+  struct stat statbuf;
+  VOP_STAT(of->vn, &statbuf);
+  file_size = statbuf.st_size;
 
-  do{
-    VOP_READ(of->vn, &ku);
-    of->offset = ku.uio_offset;
-    cur_read = 256 - ku.uio_resid;
-    tot_read += cur_read;
-  }while(cur_read == 256);
-
-  kfree(kbuf);
-  
-  of->offset = cur_offset;
+  kprintf("File is long: %d\n", (int)file_size);
 
   switch (whence)
   {
@@ -335,7 +320,7 @@ sys_lseek(int fd, off_t offset, int whence, int *errp) {
       break;
 
     case SEEK_END:
-      of->offset = tot_read + offset;
+      of->offset = file_size + offset;
       break;
     
     default:
@@ -343,8 +328,8 @@ sys_lseek(int fd, off_t offset, int whence, int *errp) {
       return -1;
   }
   
-  if (of->offset > tot_read) 
-    of->offset = tot_read;
+  if (of->offset > file_size) 
+    of->offset = file_size;
 
   return of->offset;
 
