@@ -18,6 +18,9 @@
 #include <mips/trapframe.h>
 #include <current.h>
 #include <synch.h>
+#include <vnode.h>
+#include <uio.h>
+#include <vfs.h>
 
 /*
  * simple proc management system calls
@@ -144,13 +147,30 @@ sys_execv(const char *pathname, char *const argv[]) {
 }
 
 int
-sys_getcwd(char *buf, size_t size, char *retval) {
+sys_getcwd(userptr_t buf_ptr, size_t size, int *errp) {
     #if OPT_SYSCALLS
-    kprintf("%s, %d, %s", buf, size, retval);
-    //TODO
+    
+    struct iovec iov;
+    struct uio u;
+
+    iov.iov_ubase = buf_ptr;
+    iov.iov_len = size;
+
+    u.uio_iov = &iov;
+    u.uio_iovcnt = 1;
+    u.uio_resid = size;          // amount to read from the file
+    u.uio_offset = 0;
+    u.uio_segflg =UIO_USERISPACE;
+    u.uio_rw = UIO_READ;
+    u.uio_space = curproc->p_addrspace;
+
+    // we need to get the name
+
+    *errp = vfs_getcwd(&u);
+
     #endif
     
-    return (int)NULL;
+    return (int)buf_ptr;
 }
 
 int

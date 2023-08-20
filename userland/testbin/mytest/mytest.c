@@ -36,6 +36,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <err.h>
@@ -44,10 +45,9 @@
 int
 main(void)
 {	
-	int testfile;
-	int offset = -1;
-	int nread = 0;
+	int testfile,offset = -1,nread = 0;
 	char buffer[128];
+	char * retval;
 	
 	testfile = open("fileprova", O_RDONLY, 0644);
 
@@ -82,5 +82,11 @@ main(void)
 	close(testfile);
 	close(newfd);
 
+	printf("**************getcwd TEST***************\n");
+
+	printf("The addres of the buffer is-->%d\n", (int)&buffer);
+	retval = getcwd(buffer, 128);
+	printf("retval is-->%s\n", retval);
+	printf("The dir is --> %s\n", buffer);
 	return 0;
 }

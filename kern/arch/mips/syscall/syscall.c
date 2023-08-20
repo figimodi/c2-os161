@@ -82,7 +82,6 @@ syscall(struct trapframe *tf)
 	int big = 0;
 	int32_t retval = 0;
 	int64_t retval_big = 0;
-	char* retval_charptr = NULL;
 	int err = 0, whence = 0;
 	off_t offset = 0;
 	int * stack = (int *)(tf->tf_sp+16);
@@ -182,10 +181,11 @@ syscall(struct trapframe *tf)
 			if (retval < 0) err = ENOSYS;
 			else err = 0;
 			break;
+
 		case SYS___getcwd:
-			err = sys_getcwd((char*)tf->tf_a0,
-				(size_t)tf->tf_a1,
-				retval_charptr);
+			retval = sys_getcwd((userptr_t)tf->tf_a0,
+				(size_t)tf->tf_a1, &err);
+			
 			break;
 		case SYS_chdir:
 			retval = sys_chdir((char*)tf->tf_a0);

@@ -105,6 +105,7 @@ file_read(int fd, userptr_t buf_ptr, size_t size) {
   #if OPT_SYSCALLS
   struct iovec iov;
   struct uio u;
+  
   int result;
   struct vnode *vn;
   struct openfile *of;
