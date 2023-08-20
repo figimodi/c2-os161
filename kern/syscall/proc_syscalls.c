@@ -142,3 +142,23 @@ sys_execv(const char *pathname, char *const argv[]) {
 
   return 0;
 }
+
+int
+sys_getcwd(char *buf, size_t size, char *retval) {
+    #if OPT_SYSCALLS
+    kprintf("%s, %d, %s", buf, size, retval);
+    //TODO
+    #endif
+    
+    return (int)NULL;
+}
+
+int
+sys_chdir(const char *path) {
+    #if OPT_SYSCALLS
+    kprintf("%s", path);
+    //TODO
+    #endif
+
+    return 0;
+}

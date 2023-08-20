@@ -80,9 +80,9 @@ syscall(struct trapframe *tf)
 {
 	int callno;
 	int big = 0;
-	int32_t retval;
-	int64_t retval_big;
-	char* retval_charptr;
+	int32_t retval = 0;
+	int64_t retval_big = 0;
+	char* retval_charptr = NULL;
 	int err = 0, whence = 0;
 	off_t offset = 0;
 	int * stack = (int *)(tf->tf_sp+16);
@@ -101,10 +101,7 @@ syscall(struct trapframe *tf)
 	 * deal with it except for calls that return other values,
 	 * like write.
 	 */
-
-	retval = 0;
-	retval_charptr = NULL;
-
+	
 	switch (callno) {
 	    case SYS_reboot:
 		err = sys_reboot(tf->tf_a0);
