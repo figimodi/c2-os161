@@ -297,25 +297,24 @@ sys_lseek(int fd, off_t offset, int whence, int *errp) {
   #if OPT_SYSCALLS
   if (fd < 0 || fd > OPEN_MAX || curproc->fileTable[fd] == NULL) { *errp=EBADF; return -1; }
   
-  int nread = 0, cur_read = 0;
-  char buffer[5];
+  int tot_read = 0, cur_read = 0;
+  char * buffer = kmalloc(10 * sizeof(char));
   off_t cur_offset = 0;
   struct openfile *of = curproc->fileTable[fd];
   
+  // we need to find file size in order to manage all flags and problems with overflow
   cur_offset = of->offset;
   of->offset = 0;
 
-  while((cur_read = file_read(fd, (userptr_t)buffer, 5)) == 5){
-    nread += 5;
-  }
+  do{
+    cur_read = sys_read(fd, (userptr_t)buffer, 10);
+    tot_read += cur_read;
+  }while(cur_read == 10);
 
-  nread += cur_read;
+  kfree(buffer);
 
-  // do
-  //   nread += sys_read(fd, (userptr_t)buffer, 5);
-  // while(nread %= 5);
-
-
+  kprintf("\nFile size is: %d\n", tot_read);
+  
   of->offset = cur_offset;
 
   switch (whence)
@@ -329,7 +328,7 @@ sys_lseek(int fd, off_t offset, int whence, int *errp) {
       break;
 
     case SEEK_END:
-      of->offset = nread + offset;
+      of->offset = tot_read + offset;
       break;
     
     default:
@@ -337,8 +336,8 @@ sys_lseek(int fd, off_t offset, int whence, int *errp) {
       return -1;
   }
   
-  if (of->offset > nread) 
-    of->offset = nread;
+  if (of->offset > tot_read) 
+    of->offset = tot_read;
 
   return of->offset;
 

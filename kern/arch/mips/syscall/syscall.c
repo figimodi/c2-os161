@@ -79,7 +79,9 @@ void
 syscall(struct trapframe *tf)
 {
 	int callno;
+	int big = 0;
 	int32_t retval;
+	int64_t retval_big;
 	char* retval_charptr;
 	int err = 0, whence = 0;
 	off_t offset = 0;
@@ -149,9 +151,12 @@ syscall(struct trapframe *tf)
 
 			whence = *(stack);
 
-			retval = sys_lseek((int)tf->tf_a0,
+			retval_big = sys_lseek((int)tf->tf_a0,
 				offset,
 				whence, &err);
+
+			// need to return a 64 bits value!
+			big = 1;
 			break;
 		case SYS_dup2:
 			retval = sys_dup2((int)tf->tf_a0,
@@ -210,7 +215,13 @@ syscall(struct trapframe *tf)
 	}
 	else {
 		/* Success. */
-		tf->tf_v0 = retval;
+		if(big){
+			// high part in vo and low part in v1
+			tf->tf_v1 = retval_big;
+			tf->tf_v0 = retval_big >> 32;
+		}else{
+			tf->tf_v0 = retval;
+		}
 		tf->tf_a3 = 0;      /* signal no error */
 	}
 
