@@ -21,6 +21,7 @@
 #include <vnode.h>
 #include <uio.h>
 #include <vfs.h>
+#include <fs.h>
 
 /*
  * simple proc management system calls
@@ -147,11 +148,12 @@ sys_execv(const char *pathname, char *const argv[]) {
 }
 
 int
-sys_getcwd(userptr_t buf_ptr, size_t size, int *errp) {
+sys_getcwd(userptr_t buf_ptr, size_t size, int *retval) {
     #if OPT_SYSCALLS
-    
+
     struct iovec iov;
     struct uio u;
+    int result;
 
     iov.iov_ubase = buf_ptr;
     iov.iov_len = size;
@@ -164,13 +166,19 @@ sys_getcwd(userptr_t buf_ptr, size_t size, int *errp) {
     u.uio_rw = UIO_READ;
     u.uio_space = curproc->p_addrspace;
 
-    // we need to get the name
 
-    *errp = vfs_getcwd(&u);
+    result = vfs_getcwd(&u);
+    if (result) {
+      return result;
+    }
+
+    *retval = size - u.uio_resid;;
+    
+    return 0;
 
     #endif
     
-    return (int)buf_ptr;
+    return 0;
 }
 
 int

@@ -45,7 +45,7 @@
 int
 main(void)
 {	
-	int testfile,offset = -1,nread = 0;
+	int testfile, offset = -1, nread = 0;
 	char buffer[128];
 	char * retval;
 	
@@ -85,8 +85,8 @@ main(void)
 	printf("**************getcwd TEST***************\n");
 
 	printf("The addres of the buffer is-->%d\n", (int)&buffer);
-	retval = getcwd(buffer, 128);
-	printf("retval is-->%s\n", retval);
+	retval = (char*)getcwd(buffer, 128);
+	printf("retval is --> %s\n", retval);
 	printf("The dir is --> %s\n", buffer);
 	return 0;
 }

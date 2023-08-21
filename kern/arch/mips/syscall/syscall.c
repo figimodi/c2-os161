@@ -183,9 +183,8 @@ syscall(struct trapframe *tf)
 			break;
 
 		case SYS___getcwd:
-			retval = sys_getcwd((userptr_t)tf->tf_a0,
-				(size_t)tf->tf_a1, &err);
-			
+			err = sys_getcwd((userptr_t)tf->tf_a0,
+				(size_t)tf->tf_a1, &retval);
 			break;
 		case SYS_chdir:
 			retval = sys_chdir((char*)tf->tf_a0);
@@ -214,7 +213,7 @@ syscall(struct trapframe *tf)
 	else {
 		/* Success. */
 		if(big){
-			// high part in vo and low part in v1
+			// high part in v0 and low part in v1
 			tf->tf_v1 = retval_big;
 			tf->tf_v0 = retval_big >> 32;
 		}else{
