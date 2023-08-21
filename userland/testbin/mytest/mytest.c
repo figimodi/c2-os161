@@ -100,7 +100,18 @@ main(void)
 
 	printf("**************execv TEST***************\n");
 
-	execv("testbin/palin", NULL);
+	char *args[4];
+	char arg0[10];
+	char arg1[10];
+	char arg2[10];
+	args[0] = arg0;
+	args[1] = arg1;
+	args[2] = arg2;
+	args[3] = NULL;
+	strcpy(args[0], "add");
+	strcpy(args[1], "1");
+	strcpy(args[2], "2");
+	execv("testbin/add", args);
 
 	return 0;
 }
