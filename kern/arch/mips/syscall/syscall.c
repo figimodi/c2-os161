@@ -177,11 +177,10 @@ syscall(struct trapframe *tf)
 			break;
 		case SYS_execv:
 			retval = sys_execv((const char*)tf->tf_a0,
-				(char *const*)tf->tf_a1);
+				(char **)tf->tf_a1);
 			if (retval < 0) err = ENOSYS;
 			else err = 0;
 			break;
-
 		case SYS___getcwd:
 			err = sys_getcwd((userptr_t)tf->tf_a0,
 				(size_t)tf->tf_a1, &retval);

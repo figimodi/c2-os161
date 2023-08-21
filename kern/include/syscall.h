@@ -75,7 +75,7 @@ void sys__exit(int status);
 int sys_waitpid(pid_t pid, userptr_t statusp, int options);
 pid_t sys_getpid(void);
 int sys_fork(struct trapframe *ctf, pid_t *retval);
-int sys_execv(const char *pathname, char *const argv[]);
+int sys_execv(const char *program, char **args);
 int sys_getcwd(userptr_t buf_ptr, size_t size, int *retval);
 int sys_chdir(const char *path);
 #endif

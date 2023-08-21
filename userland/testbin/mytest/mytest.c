@@ -96,6 +96,11 @@ main(void)
 	chdir("bin");
 	getcwd(buffer, 128);
 	printf("The current directory is --> %s\n", buffer);
+	chdir("..");
+
+	printf("**************execv TEST***************\n");
+
+	execv("testbin/palin", NULL);
 
 	return 0;
 }
