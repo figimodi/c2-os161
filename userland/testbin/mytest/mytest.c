@@ -88,5 +88,14 @@ main(void)
 	retval = (char*)getcwd(buffer, 128);
 	printf("retval is --> %s\n", retval);
 	printf("The dir is --> %s\n", buffer);
+
+	printf("**************chdir TEST***************\n");
+
+	getcwd(buffer, 128);
+	printf("The current directory is --> %s\n", buffer);
+	chdir("bin");
+	getcwd(buffer, 128);
+	printf("The current directory is --> %s\n", buffer);
+
 	return 0;
 }

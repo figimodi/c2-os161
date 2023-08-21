@@ -173,7 +173,7 @@ sys_getcwd(userptr_t buf_ptr, size_t size, int *retval) {
     }
 
     *retval = size - u.uio_resid;;
-    
+
     return 0;
 
     #endif
@@ -184,8 +184,12 @@ sys_getcwd(userptr_t buf_ptr, size_t size, int *retval) {
 int
 sys_chdir(const char *path) {
     #if OPT_SYSCALLS
-    kprintf("%s", path);
-    //TODO
+
+    char * mypath = kmalloc(strlen(path));
+    strcpy(mypath, path);
+    int result = vfs_chdir(mypath);
+    return result;
+
     #endif
 
     return 0;
