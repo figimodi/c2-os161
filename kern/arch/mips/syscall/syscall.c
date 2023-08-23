@@ -186,9 +186,7 @@ syscall(struct trapframe *tf)
 				(size_t)tf->tf_a1, &retval);
 			break;
 		case SYS_chdir:
-			retval = sys_chdir((char*)tf->tf_a0);
-			if (retval < 0) err = ENOSYS;
-			else err = 0;
+			err = sys_chdir((char*)tf->tf_a0);
 			break;
 
 #endif

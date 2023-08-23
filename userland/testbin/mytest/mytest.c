@@ -97,6 +97,7 @@ main(void)
 	getcwd(buffer, 128);
 	printf("The current directory is --> %s\n", buffer);
 	chdir("..");
+	printf("The current directory is --> %s\n", buffer);
 
 	printf("**************execv TEST***************\n");
 
