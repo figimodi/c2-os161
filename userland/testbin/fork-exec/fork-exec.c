@@ -39,33 +39,50 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <err.h>
+#include <string.h>
 
 int
 main(void)
 {	
 	printf("**************fork-exec**************\n");
 
-	printf("My current pid is %d\n", getpid());
-	__pid_t c_pid;
+	// printf("My current pid is %d\n", getpid());
+	// __pid_t c_pid;
 
-	c_pid = fork();
+	// c_pid = fork();
 
-	switch (c_pid)
-	{
-	case -1:
-		printf("Couldnt fork, something happened\n");
-		break;
+	// switch (c_pid)
+	// {
+	// case -1:
+	// 	printf("Couldnt fork, something happened\n");
+	// 	break;
 
-	case 0:
-		printf("Hello from the child process\npid = %d\n", getpid());
-		break;
+	// case 0:
+	// 	printf("Hello from the child process\npid = %d\n", getpid());
+	// 	break;
 	
-	default:
-		//  parent process
-		// parent will wait for the child
-		waitpid(c_pid, NULL, 0);
-		printf("Hello from the parent process\npid = %d\n", getpid());
-		break;
-	}
+	// default:
+	// 	//  parent process
+	// 	// parent will wait for the child
+	// 	waitpid(c_pid, NULL, 0);
+	// 	printf("Hello from the parent process\npid = %d\n", getpid());
+	// 	break;
+	// }
+
+	char *args[4];
+	char arg0[10];
+	char arg1[10];
+	char arg2[10];
+	args[0] = arg0;
+	args[1] = arg1;
+	args[2] = arg2;
+	args[3] = NULL;
+	strcpy(args[0], "add");
+	strcpy(args[1], "1");
+	strcpy(args[2], "2");
+	printf("Testing exec call!\n");
+	execv("testbin/add", args);
+
 	return 0;
+
 }

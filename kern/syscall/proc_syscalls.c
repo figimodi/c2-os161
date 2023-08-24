@@ -150,52 +150,45 @@ int sys_fork(struct trapframe *ctf, pid_t *retval) {
 }
 
 int 
-sys_execv(const char *program, char ** args) {
+sys_execv(userptr_t program, userptr_t * args) {
   #if OPT_SYSCALLS
   struct addrspace *new_as;
   struct addrspace *old_as;
+
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
 	int result;
     
-  int i = 0;
-  userptr_t argv = NULL;
+  int i = 0, length, tail;
+  volatile int currptr;
+  //userptr_t argv = NULL;
+
+  char ** stackargs;
+  
   int argc = 0;
-  //amount of memory left for arg strings
-  int left = ARG_MAX;
-  //length of a arg string
-  int len = 0;
-  //temp for old userspace location of string
-  userptr_t oldptr;
-  //temp for old userspace char
-  char oldchar;
-  //stack that stores old userspace locations of strings
-  struct list * oldptr_stack;
-  //stack that stores new userspace locations of strings
-  struct list * newptr_stack;
-  //kernel location of string
-  char * kstring;
-  //new userspace location of string
-  userptr_t newstring;
-    
+  
 	KASSERT(proc_getas() != NULL);
     
   char * progname = kmalloc(PATH_MAX);
   size_t actual;
   result = copyinstr((const_userptr_t) program, progname, PATH_MAX, &actual);
   if(result) {
+      // couldn't get the program name from the userspace
       kfree(progname);
       return result;
   }
     
 	/* Open the file. */
 	result = vfs_open(progname, O_RDONLY, 0, &v);
+  // do not need the name of the program anymore
   kfree(progname);
 	if (result) {
+    // couldn't open the file to execute
 		return result;
 	}
 
-	/* Create a new address space. */
+	/* Create a new address space. Not a copy of the old one but a completely new as*/
+
 	new_as = as_create();
 	if (new_as == NULL) {
 		vfs_close(v);
@@ -225,172 +218,115 @@ sys_execv(const char *program, char ** args) {
 	}
     
   if(args != NULL) {
-    //get the old userspace's arg string pointers
+    /*
+      We now need to get all the arguments that were passed in
+      the previous address space and store them in the new address space
+    */
+   // first we need to identify the number of parameters that were passed
+
     as_deactivate();
     proc_setas(old_as);
     as_activate();
-    oldptr_stack = list_create();
-    newptr_stack = list_create();
-    while(true) {
-      result = copyin((userptr_t) args+argc*sizeof(userptr_t), &oldptr, sizeof(userptr_t));
-      
-      if(result) {
-          list_destroy(oldptr_stack);
-          list_destroy(newptr_stack);
-          proc_setas(new_as);
-          as_deactivate();
-          proc_setas(old_as);
-          as_activate();
-          as_destroy(new_as);
-          return EFAULT;
-      }
-      
-      if(oldptr == NULL)
-          break;
-      
-      list_push_front(oldptr_stack, (void*)oldptr);
-      
-      argc++;
+
+    for(i=0; args[i]!=NULL; i++, argc++);
+    kprintf("%d arguments were passed\n", argc);
+
+    /*
+      Need to save each argument into a kernel buffer so that we can then later move them into a new userptr
+
+    */
+
+    char ** kargs =kmalloc(argc * sizeof(char *));
+
+    stackargs = kmalloc((argc + 1) * sizeof(char *));
+
+    if(kargs == NULL){
+      kprintf("Not enoguh memory in kernel to move arguments :(\n");
     }
-      
-    for(i = argc-1; i >= 0; i--) {
-      // switch back to old as
-      as_deactivate();
-      proc_setas(old_as);
-      as_activate();
-      
-      oldptr = (userptr_t) list_front(oldptr_stack);
-      list_pop_front(oldptr_stack);
-      
-      // make sure string is valid and get length
-      for(len = 1;; len++) {
-        // make sure next char is in userspace
-        result = copyin((userptr_t) oldptr+len-1, &oldchar, 1);
-      
-        if(result) {
-          list_destroy(oldptr_stack);
-          list_destroy(newptr_stack);
-          proc_setas(new_as);
-          as_deactivate();
-          proc_setas(old_as);
-          as_activate();
-          as_destroy(new_as);
-          return EFAULT;
-        }
-          
-        if(oldchar == 0)
-            break;
+
+    for(i=0; i<argc; i++){
+      /* Save into kargs[i] the new */
+      /* Hope we fit */
+      kargs[i] = kmalloc(128);
+      result = copyinstr((userptr_t)args[i], kargs[i], 128, &actual);
+      if(result){
+        kprintf("Copy argument did not work correctly\n");
       }
-      left -= len;
-      if(left < 0) {
-        list_destroy(oldptr_stack);
-        list_destroy(newptr_stack);
-        proc_setas(new_as);
-        as_deactivate();
-        proc_setas(old_as);
-        as_activate();
-        as_destroy(new_as);
-        return E2BIG;
-      }
-      
-      // kmalloc for kernel string
-      kstring = kmalloc(len);
-      if(kstring == NULL) {
-        list_destroy(oldptr_stack);
-        list_destroy(newptr_stack);
-        proc_setas(new_as);
-        as_deactivate();
-        proc_setas(old_as);
-        as_activate();
-        as_destroy(new_as);
-        return ENOMEM;
-      }
-      
-      //copyin the string
-      result = copyin((userptr_t) args[i], kstring, len);
-      if(result) {
-        list_destroy(oldptr_stack);
-        list_destroy(newptr_stack);
-        kfree(kstring);
-        proc_setas(new_as);
-        as_deactivate();
-        proc_setas(old_as);
-        as_activate();
-        as_destroy(new_as);
-        return result;
-      }
-        
-      // switch back to new as
-      proc_setas(new_as);
-      as_activate();
-      
-      //allocate word-aligned space in the new stack
-      stackptr -= (vaddr_t)(len/sizeof(void*)*sizeof(void*)+(len%sizeof(void*) == 0 ? 0 : sizeof(void*)));
-      newstring = (userptr_t) stackptr;
-      
-      // copyout, and kfree
-      result = copyout(kstring, newstring, len);
-      kfree(kstring);
-      if(result) {
-        list_destroy(oldptr_stack);
-        list_destroy(newptr_stack);
-        as_deactivate();
-        proc_setas(old_as);
-        as_activate();
-        as_destroy(new_as);
-        return result;
-      }
-      
-      // put copyout location at end of list to be written later
-      list_push_front(newptr_stack, newstring);
+      kprintf("Argument %d --> %s\n", i, kargs[i]);
     }
-    list_destroy(oldptr_stack);
+
+    // all the arguments have been saved and the path has already been used so we can get rid of the old address space
     
-    // create argv in new userspace
+    as_deactivate();
     proc_setas(new_as);
     as_activate();
-    stackptr -= (vaddr_t)((argc+1)*sizeof(char *));
-    argv = (userptr_t) stackptr;
+
+    // now I need to copy all these parameters in the new address space.
+
+    // starting from the new stackptr
+    currptr = stackptr;
+    for (i = 0; i < argc ; i++){
+      // need to copy in the stack kargs[i];
+      length = strlen(kargs[i]);
+      kprintf("argument %d is long %d\n", i, length);
+
+      // need to make sure that we are still alligned in the stack
+      currptr -= length;
+      tail = 0;
+
+      if(currptr & 0x3){
+        // not alligned!
+        tail = currptr & 0x3;
+
+        // will now subtract the tail to be at the beginning of the word
+        currptr -= tail;
+      }
+
+      // need to copy from kernel memory to user memory
+      copyout(kargs[i], (userptr_t)currptr, length);
+      kfree(kargs[i]);
+
+
+      // do I need to zero out memory that is not copied? might already be zeroed out. check with debug
       
-    //copyout new arg string ptr locations into the new argv
-    for(i = 0; i < argc; i++) {
-        newstring = list_front(newptr_stack);
-        list_pop_front(newptr_stack);
-        result = copyout(&newstring, argv+i*sizeof(userptr_t), sizeof(userptr_t));
-        if(result) {
-            list_destroy(newptr_stack);
-            as_deactivate();
-            proc_setas(old_as);
-            as_activate();
-            as_destroy(new_as);
-            return result;
-        }
+      stackargs[i] = (char *)currptr;
     }
-    //write null at end of argv
-    newstring = NULL;
-    copyout(&newstring, argv+argc*sizeof(userptr_t), sizeof(userptr_t));
-    
-    list_destroy(newptr_stack);
-  }
-    
 
-	/* Destroy the old address space. */
-  proc_setas(old_as);
-  as_deactivate();
-  proc_setas(new_as);
-  as_activate();
-	as_destroy(old_as);
+    // last arguments must be null pointer
+    stackargs[i] = (char *)0;
 
-	/* Warp to user mode. */
-	enter_new_process(argc, (userptr_t) argv,
+    // need to save in memory also the pointers to the arguments in user memory;
+
+    for (i=argc; i>=0; i--){
+      currptr -= sizeof(char *);
+      copyout(stackargs[i], (userptr_t)currptr, sizeof(char*));
+    }
+
+    as_destroy(old_as);
+
+    enter_new_process(argc, (userptr_t)currptr,
 			  NULL /*userspace addr of environment*/,
 			  stackptr, entrypoint);
+  }else{
+
+    as_deactivate();
+    proc_setas(new_as);
+    as_activate();
+    as_destroy(old_as);
+
+	/* Warp to user mode. */
+	enter_new_process(0, NULL,
+			  NULL /*userspace addr of environment*/,
+			  stackptr, entrypoint);
+  }
+  
+
 
 	/* enter_new_process does not return. */
 	panic("enter_new_process returned\n");
 	return EINVAL;
-  #endif
 
+  #endif
   return 0;
 }
 

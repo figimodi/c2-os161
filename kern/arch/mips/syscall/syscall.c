@@ -180,8 +180,8 @@ syscall(struct trapframe *tf)
 	        err = sys_fork(tf,&retval);
 			break;
 		case SYS_execv:
-			retval = sys_execv((const char*)tf->tf_a0,
-				(char **)tf->tf_a1);
+			retval = sys_execv((userptr_t)tf->tf_a0,
+				(userptr_t*)tf->tf_a1);
 			if (retval < 0) err = ENOSYS;
 			else err = 0;
 			break;

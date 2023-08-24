@@ -71,7 +71,7 @@ file_read(int fd, userptr_t buf_ptr, size_t size) {
 }
 
 static int
-file_write(int fd, userptr_t buf_ptr, size_t size) {
+  file_write(int fd, userptr_t buf_ptr, size_t size) {
   struct iovec iov;
   struct uio ku;
   int result, nwrite;
