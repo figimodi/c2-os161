@@ -376,7 +376,8 @@ proc_remthread(struct thread *t)
 {
 	struct proc *proc;
 	int spl;
-
+	
+	// process to which the thread is associated
 	proc = t->t_proc;
 	KASSERT(proc != NULL);
 

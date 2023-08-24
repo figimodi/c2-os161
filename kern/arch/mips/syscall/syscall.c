@@ -172,6 +172,10 @@ syscall(struct trapframe *tf)
 			retval = sys_getpid();
 			if (retval < 0) err = ENOSYS;
 			break;
+		case SYS_getppid:
+			retval = sys_getppid();
+			if (retval < 0) err = ENOSYS;
+			break;
 		case SYS_fork:
 	        err = sys_fork(tf,&retval);
 			break;

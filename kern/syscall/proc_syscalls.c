@@ -79,6 +79,17 @@ sys_getpid(void)
 #endif
 }
 
+pid_t
+sys_getppid(void)
+{
+#if OPT_SYSCALLS
+  KASSERT(curproc != NULL);
+  return curproc->pp_pid;
+#else
+  return -1;
+#endif
+}
+
 static void
 call_enter_forked_process(void *tfv, unsigned long dummy) {
   struct trapframe *tf = (struct trapframe *)tfv;

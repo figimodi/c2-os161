@@ -27,58 +27,45 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _SYSCALL_H_
-#define _SYSCALL_H_
-
-
-#include <cdefs.h> /* for __DEAD */
-#include "opt-syscalls.h"
-
-struct trapframe; /* from <machine/trapframe.h> */
-
 /*
- * The system call dispatcher.
- 
+ * Simple program to add two numbers (given in as arguments). Used to
+ * test argument passing to child processePs.
+ *
+ * Intended for the basic system calls assignment; this should work
+ * once execv() argument handling is implemented.
  */
 
-void syscall(struct trapframe *tf);
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <err.h>
 
-/*
- * Support functions.
- */
+int
+main(void)
+{	
+	printf("**************fork-exec**************\n");
 
-/* Helper for fork(). You write this. */
-void enter_forked_process(struct trapframe *tf);
+	printf("My current pid is %d\n", getpid());
+	__pid_t c_pid;
 
-/* Enter user mode. Does not return. */
-__DEAD void enter_new_process(int argc, userptr_t argv, userptr_t env,
-		       vaddr_t stackptr, vaddr_t entrypoint);
+	c_pid = fork();
 
+	switch (c_pid)
+	{
+	case -1:
+		printf("Couldnt fork, something happened\n");
+		break;
 
-/*
- * Prototypes for IN-KERNEL entry points for system call implementations.
- */
-
-int sys_reboot(int code);
-int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
-
-#if OPT_SYSCALLS
-struct openfile;
-void openfileIncrRefCount(struct openfile *of);
-int sys_open(userptr_t path, int openflags, mode_t mode, int *errp);
-int sys_close(int fd);
-int sys_write(int fd, userptr_t buf_ptr, size_t size);
-int sys_read(int fd, userptr_t buf_ptr, size_t size);
-off_t sys_lseek(int fd, off_t offset, int whence, int *errp);
-int sys_dup2(int oldfd, int newfd, int *errp);
-void sys__exit(int status);
-int sys_waitpid(pid_t pid, userptr_t statusp, int options);
-pid_t sys_getpid(void);
-pid_t sys_getppid(void);
-int sys_fork(struct trapframe *ctf, pid_t *retval);
-int sys_execv(const char *program, char **args);
-int sys_getcwd(userptr_t buf_ptr, size_t size, int *retval);
-int sys_chdir(const char *path);
-#endif
-
-#endif /* _SYSCALL_H_ */
+	case 0:
+		printf("Hello from the child process\npid = %d\n", getpid());
+		break;
+	
+	default:
+		//  parent process
+		// parent will wait for the child
+		waitpid(c_pid, NULL, 0);
+		printf("Hello from the parent process\npid = %d\n", getpid());
+		break;
+	}
+	return 0;
+}
