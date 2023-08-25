@@ -66,7 +66,7 @@ int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
 struct openfile;
 void openfileIncrRefCount(struct openfile *of);
 int sys_open(userptr_t path, int openflags, mode_t mode, int *errp);
-int sys_close(int fd);
+int sys_close(int fd, int *errp);
 int sys_write(int fd, userptr_t buf_ptr, size_t size, int *errp);
 int sys_read(int fd, userptr_t buf_ptr, size_t size, int *errp);
 off_t sys_lseek(int fd, off_t offset, int whence, int *errp);
