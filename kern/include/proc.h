@@ -75,6 +75,7 @@ struct proc {
 #if OPT_SYSCALLS
 	int p_status;                   /* status as obtained by exit() */
 	pid_t p_pid;
+	pid_t pp_pid;
 	struct semaphore *p_sem;
 	struct openfile *fileTable[OPEN_MAX];
 #endif

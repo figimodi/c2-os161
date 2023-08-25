@@ -29,7 +29,7 @@
 
 /*
  * Simple program to add two numbers (given in as arguments). Used to
- * test argument passing to child processes.
+ * test argument passing to child processePs.
  *
  * Intended for the basic system calls assignment; this should work
  * once execv() argument handling is implemented.
@@ -37,23 +37,52 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <err.h>
+#include <string.h>
 
 int
-main(int argc, char *argv[])
-{
-	int i, j;
+main(void)
+{	
+	printf("**************fork-exec**************\n");
 
-	printf("Add Function\n");
+	// printf("My current pid is %d\n", getpid());
+	// __pid_t c_pid;
 
-	if (argc != 3) {
-		errx(1, "Usage: add num1 num2");
-	}
+	// c_pid = fork();
 
-	i = atoi(argv[1]);
-	j = atoi(argv[2]);
+	// switch (c_pid)
+	// {
+	// case -1:
+	// 	printf("Couldnt fork, something happened\n");
+	// 	break;
 
-	printf("Answer: %d\n", i+j);
+	// case 0:
+	// 	printf("Hello from the child process\npid = %d\n", getpid());
+	// 	break;
+	
+	// default:
+	// 	//  parent process
+	// 	// parent will wait for the child
+	// 	waitpid(c_pid, NULL, 0);
+	// 	printf("Hello from the parent process\npid = %d\n", getpid());
+	// 	break;
+	// }
+
+	char *args[4];
+	char arg0[10];
+	char arg1[10];
+	char arg2[10];
+	args[0] = arg0;
+	args[1] = arg1;
+	args[2] = arg2;
+	args[3] = NULL;
+	strcpy(args[0], "add");
+	strcpy(args[1], "1");
+	strcpy(args[2], "2");
+	printf("Testing exec call!\n");
+	execv("testbin/mytest", args);
 
 	return 0;
+
 }

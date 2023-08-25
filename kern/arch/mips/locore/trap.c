@@ -432,6 +432,7 @@ enter_new_process(int argc, userptr_t argv, userptr_t env,
 	tf.tf_epc = entry;
 	tf.tf_a0 = argc;
 	tf.tf_a1 = (vaddr_t)argv;
+	kprintf("Setting a1 register to %x\n", (int)tf.tf_a1);
 	tf.tf_a2 = (vaddr_t)env;
 	tf.tf_sp = stack;
 
