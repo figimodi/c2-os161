@@ -23,7 +23,6 @@
 #include <uio.h>
 #include <vfs.h>
 #include <fs.h>
-#include <list.h>
 
 /*
  * simple proc management system calls
@@ -230,7 +229,6 @@ sys_execv(userptr_t program, userptr_t * args) {
     as_activate();
 
     for(i=0; args[i]!=NULL; i++, argc++);
-    kprintf("%d arguments were passed\n", argc);
 
     /*
       Need to save each argument into a kernel buffer so that we can then later move them into a new userptr
@@ -241,6 +239,7 @@ sys_execv(userptr_t program, userptr_t * args) {
 
     if(kargs == NULL){
       kprintf("Not enoguh memory in kernel to move arguments :(\n");
+      // TODO? forse solo return ENOMEM oppure panic("I don't know how to handle this\n");
     }
 
     for(i=0; i<argc; i++){
@@ -251,7 +250,6 @@ sys_execv(userptr_t program, userptr_t * args) {
       if(result){
         kprintf("Copy argument did not work correctly\n");
       }
-      kprintf("Argument %d --> %s\n", i, kargs[i]);
     }
 
     // all the arguments have been saved and the path has already been used so we can get rid of the old address space
@@ -268,7 +266,6 @@ sys_execv(userptr_t program, userptr_t * args) {
     for (i = 0; i < argc ; i++){
       // need to copy in the stack kargs[i];
       length = strlen(kargs[i]);
-      kprintf("argument %d is long %d\n", i, length);
 
       // need to make sure that we are still alligned in the stack
       currptr -= length;
@@ -303,8 +300,6 @@ sys_execv(userptr_t program, userptr_t * args) {
 
       if(result){
         kprintf("Sorry, couldnt copy address of argv :(\n");
-      }else{
-        kprintf("I copied address %x at address %x\n", (int)(*((int*)currptr)), (int)currptr);
       }
     }
 

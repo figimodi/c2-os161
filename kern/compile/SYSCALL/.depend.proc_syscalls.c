@@ -14,4 +14,4 @@ proc_syscalls.o: ../../syscall/proc_syscalls.c ../../include/types.h \
  opt-dumbvm.h includelinks/mips/trapframe.h ../../include/current.h \
  includelinks/machine/current.h ../../include/synch.h opt-synch.h \
  ../../include/vnode.h ../../include/uio.h ../../include/kern/iovec.h \
- ../../include/vfs.h ../../include/fs.h ../../include/list.h
+ ../../include/vfs.h ../../include/fs.h
