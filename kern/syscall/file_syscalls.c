@@ -34,7 +34,7 @@ struct openfile {
   off_t offset;	
   unsigned int countRef;
   off_t size;
-  int mode; /* Read only, Write only, Read-Write */
+  uint32_t openflags;
   struct semaphore *sem;
 };
 
@@ -60,11 +60,11 @@ file_read(int fd, userptr_t buf_ptr, size_t size) {
   struct openfile *of;
   void *kbuf;
 
-  if (fd<0||fd>OPEN_MAX) return -1;
+  if (fd < 0||fd >= OPEN_MAX) return -1;
   of = curproc->fileTable[fd];
-  if (of==NULL) return -1;
+  if (of == NULL) return -1;
   vn = of->vn;
-  if (vn==NULL) return -1;
+  if (vn == NULL) return -1;
 
   kbuf = kmalloc(size);
   uio_kinit(&iov, &ku, kbuf, size, of->offset, UIO_READ);
@@ -88,11 +88,11 @@ static int
   struct openfile *of;
   void *kbuf;
 
-  if (fd<0||fd>OPEN_MAX) return -1;
+  if (fd < 0 || fd >= OPEN_MAX) return -1;
   of = curproc->fileTable[fd];
-  if (of==NULL) return -1;
+  if (of == NULL) return -1;
   vn = of->vn;
-  if (vn==NULL) return -1;
+  if (vn == NULL) return -1;
 
   kbuf = kmalloc(size);
   copyin(buf_ptr,kbuf,size);
@@ -119,11 +119,11 @@ file_read(int fd, userptr_t buf_ptr, size_t size) {
   struct vnode *vn;
   struct openfile *of;
 
-  if (fd<0||fd>OPEN_MAX) return -1;
+  if (fd < 0 || fd >= OPEN_MAX) return -1;
   of = curproc->fileTable[fd];
-  if (of==NULL) return -1;
+  if (of == NULL) return -1;
   vn = of->vn;
-  if (vn==NULL) return -1;
+  if (vn == NULL) return -1;
 
   iov.iov_ubase = buf_ptr;
   iov.iov_len = size;
@@ -155,11 +155,11 @@ file_write(int fd, userptr_t buf_ptr, size_t size) {
   struct vnode *vn;
   struct openfile *of;
 
-  if (fd<0||fd>OPEN_MAX) return -1;
+  if (fd < 0 || fd >= OPEN_MAX) return -1;
   of = curproc->fileTable[fd];
-  if (of==NULL) return -1;
+  if (of == NULL) return -1;
   vn = of->vn;
-  if (vn==NULL) return -1;
+  if (vn == NULL) return -1;
 
   iov.iov_ubase = buf_ptr;
   iov.iov_len = size;
@@ -210,7 +210,7 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
   }
 
   /* search system open file table */
-  for (i=0; i<SYSTEM_OPEN_MAX; i++) {
+  for (i=0; i < SYSTEM_OPEN_MAX; i++) {
     if (systemFileTable[i].vn==NULL) {
       of = &systemFileTable[i];
       of->vn = v;
@@ -220,7 +220,7 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
         of->offset = of->size;
       else
         of->offset = 0;
-      of->mode = openflags & 0x3;
+      of->openflags = openflags;
       of->sem = sem_create("of_sem", 1);
       break;
     }
@@ -230,7 +230,7 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
     *errp = ENFILE;
   }
   else {
-    for (fd=STDERR_FILENO+1; fd<OPEN_MAX; fd++) {
+    for (fd = STDERR_FILENO + 1; fd < OPEN_MAX; fd++) {
       if (curproc->fileTable[fd] == NULL) {
         curproc->fileTable[fd] = of;
         return fd;
@@ -250,23 +250,33 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
  * file system calls for open/close
  */
 int
-sys_close(int fd)
+sys_close(int fd, int *errp)
 {
   #if OPT_SYSCALLS
   struct openfile *of=NULL; 
-  struct vnode *vn;
 
-  if (fd<0||fd>OPEN_MAX) return -1;
+  if (fd < 0 || fd >= OPEN_MAX)
+  {
+    *errp = EBADF;
+    return -1;
+  }
+
   of = curproc->fileTable[fd];
-  if (of==NULL) return -1;
+  if (of == NULL)
+  {
+    *errp = EBADF;
+    return -1;
+  }
+
   curproc->fileTable[fd] = NULL;
-
   if (--of->countRef > 0) return 0; // just decrement ref cnt
-  vn = of->vn;
+  
+  if (of->vn == NULL)
+    return -1;
   of->vn = NULL;
-  if (vn==NULL) return -1;
+  vfs_close(of->vn);	
 
-  vfs_close(vn);	
+  return 0;
   #endif
 
   return 0;
@@ -279,24 +289,43 @@ int
 sys_write(int fd, userptr_t buf_ptr, size_t size, int *errp)
 {
   #if OPT_SYSCALLS
-  int i;
-  int result;
-  int file_mode;
+  int i, result, file_mode;
+  off_t recovery_offset;
   char *p = (char *)buf_ptr;
 
   if (fd!=STDOUT_FILENO && fd!=STDERR_FILENO) 
   {
-    file_mode = (curproc->fileTable[fd])->mode;
+    struct openfile *of = curproc->fileTable[fd];
+    file_mode = of->openflags & O_ACCMODE;
+    recovery_offset = of->offset;
 
+    /* checking if the file was opend with the right mode */
     if (file_mode == O_RDONLY)
     {
       *errp = EBADF;
       return -1;
     }
 
-    P((curproc->fileTable[fd])->sem);
+    P(of->sem);
+    /* when O_APPEND is set, before every write the cursor should be moved at the end */
+    if (of->openflags & O_APPEND)
+      sys_lseek(fd, 0, SEEK_END, &result);
+    if (result)
+    {
+      *errp = ENOSYS;
+      V(of->sem);
+      return -1;
+    }
     result = file_write(fd, buf_ptr, size);
-    V((curproc->fileTable[fd])->sem);
+    if (result)
+    {
+      /* set back the original offset (atomic operation in case of O_APPEND)*/
+      sys_lseek(fd, recovery_offset, SEEK_SET, &result);
+      *errp = ENOSYS;
+      V(of->sem);
+      return -1;
+    }
+    V(of->sem);
     return result;
   }
 
@@ -319,9 +348,12 @@ sys_read(int fd, userptr_t buf_ptr, size_t size, int *errp)
   int file_mode;
   char *p = (char *)buf_ptr;
 
+  if (size == 0)
+    return 0;
+
   if (fd!=STDIN_FILENO)
   {
-    file_mode = (curproc->fileTable[fd])->mode;
+    file_mode = (curproc->fileTable[fd])->openflags & O_ACCMODE;
 
     if (file_mode == O_WRONLY)
     {
@@ -349,7 +381,7 @@ sys_read(int fd, userptr_t buf_ptr, size_t size, int *errp)
 off_t
 sys_lseek(int fd, off_t offset, int whence, int *errp) {
   #if OPT_SYSCALLS
-  if (fd < 0 || fd > OPEN_MAX || curproc->fileTable[fd] == NULL) { *errp=EBADF; return -1; }
+  if (fd < 0 || fd >= OPEN_MAX || curproc->fileTable[fd] == NULL) { *errp = EBADF; return -1; }
   
   struct openfile *of = curproc->fileTable[fd];
 
@@ -385,13 +417,15 @@ sys_lseek(int fd, off_t offset, int whence, int *errp) {
 int
 sys_dup2(int oldfd, int newfd, int *errp) {
   #if OPT_SYSCALLS
-  if (newfd<STDERR_FILENO || newfd>OPEN_MAX) { *errp=EBADF; return -1; }
-  if (oldfd<STDERR_FILENO || oldfd>OPEN_MAX || curproc->fileTable[oldfd]==NULL) { *errp=EBADF; return -1; }
-  if (oldfd==newfd) return newfd;
+  if (newfd < STDERR_FILENO || newfd >= OPEN_MAX) { *errp = EBADF; return -1; }
+  if (oldfd < STDERR_FILENO || oldfd >= OPEN_MAX || curproc->fileTable[oldfd]==NULL) { *errp = EBADF; return -1; }
+  if (oldfd == newfd) return newfd;
+
+  int result;
 
   if(curproc->fileTable[newfd] != NULL){
     // close the file for this process
-    sys_close(newfd);
+    sys_close(newfd, &result);
   }
 
   struct openfile *of = curproc->fileTable[oldfd];
