@@ -57,7 +57,7 @@ main()
 	// printf("argv[0]: %s\n", argv[0]);
 	// return 0;
 
-	printf("*******************TEST FILE*******************\n\n");
+	printf("\n\n*******************TEST FILE PERMISSIONS*******************\n");
 	char buffer[128];
 	int fd, result;
 	fd = open("fileprova", O_WRONLY, NULL);

@@ -254,6 +254,7 @@ sys_close(int fd, int *errp)
 {
   #if OPT_SYSCALLS
   struct openfile *of=NULL; 
+  struct vnode *vn;
 
   if (fd < 0 || fd >= OPEN_MAX)
   {
@@ -271,10 +272,11 @@ sys_close(int fd, int *errp)
   curproc->fileTable[fd] = NULL;
   if (--of->countRef > 0) return 0; // just decrement ref cnt
   
-  if (of->vn == NULL)
-    return -1;
+  vn = of->vn;
   of->vn = NULL;
-  vfs_close(of->vn);	
+  if (vn==NULL) return -1;
+
+  vfs_close(vn);		
 
   return 0;
   #endif
