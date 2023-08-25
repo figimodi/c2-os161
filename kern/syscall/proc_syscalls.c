@@ -160,10 +160,11 @@ sys_execv(userptr_t program, userptr_t * args) {
 	int result;
     
   int i = 0, length, tail;
-  volatile int currptr;
+
+  volatile userptr_t currptr;
   //userptr_t argv = NULL;
 
-  char ** stackargs;
+  int stackargs[10];
   
   int argc = 0;
   
@@ -238,8 +239,6 @@ sys_execv(userptr_t program, userptr_t * args) {
 
     char ** kargs =kmalloc(argc * sizeof(char *));
 
-    stackargs = kmalloc((argc + 1) * sizeof(char *));
-
     if(kargs == NULL){
       kprintf("Not enoguh memory in kernel to move arguments :(\n");
     }
@@ -260,11 +259,12 @@ sys_execv(userptr_t program, userptr_t * args) {
     as_deactivate();
     proc_setas(new_as);
     as_activate();
+    as_destroy(old_as);
 
     // now I need to copy all these parameters in the new address space.
 
     // starting from the new stackptr
-    currptr = stackptr;
+    currptr = (userptr_t)stackptr;
     for (i = 0; i < argc ; i++){
       // need to copy in the stack kargs[i];
       length = strlen(kargs[i]);
@@ -274,9 +274,9 @@ sys_execv(userptr_t program, userptr_t * args) {
       currptr -= length;
       tail = 0;
 
-      if(currptr & 0x3){
+      if((int)currptr & 0x3){
         // not alligned!
-        tail = currptr & 0x3;
+        tail = (int)currptr & 0x3;
 
         // will now subtract the tail to be at the beginning of the word
         currptr -= tail;
@@ -289,24 +289,28 @@ sys_execv(userptr_t program, userptr_t * args) {
 
       // do I need to zero out memory that is not copied? might already be zeroed out. check with debug
       
-      stackargs[i] = (char *)currptr;
+      stackargs[i] = (int)currptr;
     }
 
     // last arguments must be null pointer
-    stackargs[i] = (char *)0;
+    stackargs[i] = 0;
 
     // need to save in memory also the pointers to the arguments in user memory;
 
     for (i=argc; i>=0; i--){
       currptr -= sizeof(char *);
-      copyout(stackargs[i], (userptr_t)currptr, sizeof(char*));
-    }
+      result = copyout(stackargs + i, currptr, sizeof(char*));
 
-    as_destroy(old_as);
+      if(result){
+        kprintf("Sorry, couldnt copy address of argv :(\n");
+      }else{
+        kprintf("I copied address %x at address %x\n", (int)(*((int*)currptr)), (int)currptr);
+      }
+    }
 
     enter_new_process(argc, (userptr_t)currptr,
 			  NULL /*userspace addr of environment*/,
-			  stackptr, entrypoint);
+			  (vaddr_t)currptr, entrypoint);
   }else{
 
     as_deactivate();

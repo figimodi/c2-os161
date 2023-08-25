@@ -41,9 +41,16 @@ int
 main(int argc, char *argv[])
 {
 	const char *tmp;
+
 	int i;
 
 	printf("argc: %d\n", argc);
+
+	printf("argv: %x\n", (int)argv);
+
+	printf("first argument %x at %x\n", *((int*)argv + 1), (int)(argv + 1) );
+	printf("second argument %x at %x\n", *((int*)argv + 2 ), (int)(argv + 2 ) );
+	printf("third argument %x at %x\n", *((int*)argv + 3 ), (int)(argv + 3 ) );
 
 	for (i=0; i<=argc; i++) {
 		tmp = argv[i];

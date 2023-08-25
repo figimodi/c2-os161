@@ -44,6 +44,8 @@ main(int argc, char *argv[])
 {
 	int i, j;
 
+	printf("Add Function\n");
+
 	if (argc != 3) {
 		errx(1, "Usage: add num1 num2");
 	}

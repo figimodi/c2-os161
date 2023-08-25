@@ -81,7 +81,7 @@ main(void)
 	strcpy(args[1], "1");
 	strcpy(args[2], "2");
 	printf("Testing exec call!\n");
-	execv("testbin/add", args);
+	execv("testbin/mytest", args);
 
 	return 0;
 

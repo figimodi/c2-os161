@@ -43,76 +43,13 @@
 #include <kern/seek.h>
 
 int
-main(void)
+main(int argc, char *argv[])
 {	
-	int testfile, offset = -1, nread = 0;
-	char buffer[128];
-	char * retval;
-	
-	testfile = open("fileprova", O_RDONLY, 0644);
+	printf("argc: %d\n", argc);
+	printf("argv: %x\n", (int)argv);
 
-	printf("**************lseek TEST***************\n");
-
-	nread = read(testfile, buffer, 5);
-
-	printf("Read %d bytes--->%s\n", nread, buffer);
-
-	printf("Skipping 2 chars...\n");
-
-	offset = lseek(testfile, 2, SEEK_CUR);
-	printf("Offset is now %d\n", offset);
-
-	read(testfile, buffer, 5);
-	printf("Read %d bytes--->%s\n", nread, buffer);
-
-	printf("**************dup2 TEST***************\n");
-	lseek(testfile, 0, SEEK_SET);
-	int newfd = 10;
-	newfd = dup2(testfile, newfd);
-
-	if(newfd == 10){
-		printf("dup2 worked, the new fd is: %d\n", newfd);
-	}else{
-		printf("dup2 did not work, the returned value is: %d\n", newfd);
-	}
-
-	read(newfd, buffer, 5);
-	printf("Read %d bytes--->%s\n", nread, buffer);
-
-	close(testfile);
-	close(newfd);
-
-	printf("**************getcwd TEST***************\n");
-
-	printf("The addres of the buffer is-->%d\n", (int)&buffer);
-	retval = (char*)getcwd(buffer, 128);
-	printf("retval is --> %s\n", retval);
-	printf("The dir is --> %s\n", buffer);
-
-	printf("**************chdir TEST***************\n");
-
-	getcwd(buffer, 128);
-	printf("The current directory is --> %s\n", buffer);
-	chdir("bin");
-	getcwd(buffer, 128);
-	printf("The current directory is --> %s\n", buffer);
-	chdir("..");
-	printf("The current directory is --> %s\n", buffer);
-
-	printf("**************execv TEST***************\n");
-
-	char *args[4];
-	char arg0[10];
-	char arg1[10];
-	char arg2[10];
-	args[0] = arg0;
-	args[1] = arg1;
-	args[2] = arg2;
-	args[3] = NULL;
-	strcpy(args[0], "add");
-	strcpy(args[1], "1");
-	strcpy(args[2], "2");
-	execv("testbin/add", args);
-
+	char * add = (char *)0x7ffffffc;
+	printf("%s\n", add);
+	printf("argv[0]: %s\n", argv[0]);
 	return 0;
 }
