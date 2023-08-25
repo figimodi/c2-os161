@@ -34,7 +34,7 @@ struct openfile {
   off_t offset;	
   unsigned int countRef;
   off_t size;
-  mode_t mode;
+  int mode; /* Read only, Write only, Read-Write */
   struct semaphore *sem;
 };
 
@@ -220,8 +220,7 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
         of->offset = of->size;
       else
         of->offset = 0;
-      of->mode = statbuf.st_mode;
-      //kprintf("opening file with mode: %x", of->mode);
+      of->mode = openflags & 0x3;
       of->sem = sem_create("of_sem", 1);
       break;
     }
@@ -277,17 +276,24 @@ sys_close(int fd)
  * simple file system calls for write/read
  */
 int
-sys_write(int fd, userptr_t buf_ptr, size_t size)
+sys_write(int fd, userptr_t buf_ptr, size_t size, int *errp)
 {
   #if OPT_SYSCALLS
   int i;
   int result;
+  int file_mode;
   char *p = (char *)buf_ptr;
-
-  if ((curproc->fileTable[fd])->mode )
 
   if (fd!=STDOUT_FILENO && fd!=STDERR_FILENO) 
   {
+    file_mode = (curproc->fileTable[fd])->mode;
+
+    if (file_mode == O_RDONLY)
+    {
+      *errp = EBADF;
+      return -1;
+    }
+
     P((curproc->fileTable[fd])->sem);
     result = file_write(fd, buf_ptr, size);
     V((curproc->fileTable[fd])->sem);
@@ -305,15 +311,23 @@ sys_write(int fd, userptr_t buf_ptr, size_t size)
 }
 
 int
-sys_read(int fd, userptr_t buf_ptr, size_t size)
+sys_read(int fd, userptr_t buf_ptr, size_t size, int *errp)
 {
   #if OPT_SYSCALLS
   int i;
   int result;
+  int file_mode;
   char *p = (char *)buf_ptr;
 
   if (fd!=STDIN_FILENO)
   {
+    file_mode = (curproc->fileTable[fd])->mode;
+
+    if (file_mode == O_WRONLY)
+    {
+      *errp = EBADF;
+      return -1;
+    }
     P((curproc->fileTable[fd])->sem);
     result = file_read(fd, buf_ptr, size);
     V((curproc->fileTable[fd])->sem);

@@ -63,7 +63,7 @@ main()
 	fd = open("fileprova", O_WRONLY, NULL);
 	printf("trying to read a WRITEONLY file...\n");
 	result = read(fd, buffer, 128);
-	if(result)
+	if(result >= 0)
 		printf("I tried to read, and i read %s\n", buffer);
 	else
 		printf("I couldn't read a WRITEONLY file\n");
@@ -71,9 +71,9 @@ main()
 
 	fd = open("fileprova", O_RDONLY, NULL);
 	printf("trying to write a READONLY file...\n");
-	strcpy(buffer, "adding stuff\n");
-	result = write(fd, buffer, 128);
-	if(result)
+	strcpy(buffer, "adding stuff");
+	result = write(fd, buffer, strlen(buffer));
+	if(result >= 0)
 		printf("I tried to wrote, and i wrote %s\n", buffer);
 	else
 		printf("I couldn't wrote a READONLY file\n");
@@ -82,8 +82,8 @@ main()
 	fd = open("fileprova", O_RDWR | O_APPEND, NULL);
 	read(fd, buffer, 128);
 	printf("trying to append into this file:\n%s\n", buffer);
-	strcpy(buffer, "appending stuff\n");
-	result = write(fd, buffer, 128);
+	strcpy(buffer, "appending stuff");
+	result = write(fd, buffer, strlen(buffer));
 	if(result)
 	{
 		read(fd, buffer, 128);
