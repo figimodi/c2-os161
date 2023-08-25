@@ -41,15 +41,55 @@
 #include <unistd.h>
 #include <err.h>
 #include <kern/seek.h>
+#include <kern/fcntl.h>
 
 int
-main(int argc, char *argv[])
+// main(int argc, char *argv[])
+// {	
+main()
 {	
-	printf("argc: %d\n", argc);
-	printf("argv: %x\n", (int)argv);
 
-	char * add = (char *)0x7ffffffc;
-	printf("%s\n", add);
-	printf("argv[0]: %s\n", argv[0]);
-	return 0;
+	// printf("argc: %d\n", argc);
+	// printf("argv: %x\n", (int)argv);
+
+	// char * add = (char *)0x7ffffffc;
+	// printf("%s\n", add);
+	// printf("argv[0]: %s\n", argv[0]);
+	// return 0;
+
+	printf("*******************TEST FILE*******************\n\n");
+	char buffer[128];
+	int fd, result;
+	fd = open("fileprova", O_WRONLY, NULL);
+	printf("trying to read a WRITEONLY file...\n");
+	result = read(fd, buffer, 128);
+	if(result)
+		printf("I tried to read, and i read %s\n", buffer);
+	else
+		printf("I couldn't read a WRITEONLY file\n");
+	close(fd);
+
+	fd = open("fileprova", O_RDONLY, NULL);
+	printf("trying to write a READONLY file...\n");
+	strcpy(buffer, "adding stuff\n");
+	result = write(fd, buffer, 128);
+	if(result)
+		printf("I tried to wrote, and i wrote %s\n", buffer);
+	else
+		printf("I couldn't wrote a READONLY file\n");
+	close(fd);
+
+	fd = open("fileprova", O_RDWR | O_APPEND, NULL);
+	read(fd, buffer, 128);
+	printf("trying to append into this file:\n%s\n", buffer);
+	strcpy(buffer, "appending stuff\n");
+	result = write(fd, buffer, 128);
+	if(result)
+	{
+		read(fd, buffer, 128);
+		printf("I tried to append, now the file is:\n%s\n", buffer);
+	}
+	else
+		printf("I couldn't wrote a READONLY file\n");
+	close(fd);
 }

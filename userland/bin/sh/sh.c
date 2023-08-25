@@ -469,8 +469,8 @@ docommand(char *buf, struct exitinfo *ei)
 		}
 		endnsecs -= startnsecs;
 		endsecs -= startsecs;
-		warnx("subprocess time: %lu.%09lu seconds",
-		      (unsigned long) endsecs, (unsigned long) endnsecs);
+		// warnx("subprocess time: %lu.%09lu seconds",
+		//       (unsigned long) endsecs, (unsigned long) endnsecs);
 	}
 }
 

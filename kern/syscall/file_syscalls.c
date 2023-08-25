@@ -8,6 +8,7 @@
 #include <kern/unistd.h>
 #include <kern/errno.h>
 #include <kern/seek.h>
+#include <kern/fcntl.h>
 #include <clock.h>
 #include <syscall.h>
 #include <current.h>
@@ -19,6 +20,7 @@
 #include <uio.h>
 #include <proc.h>
 #include <stat.h>
+#include <synch.h>
 
 
 /* max num of system wide open files */
@@ -31,13 +33,20 @@ struct openfile {
   struct vnode *vn;
   off_t offset;	
   unsigned int countRef;
+  off_t size;
+  mode_t mode;
+  struct semaphore *sem;
 };
 
 struct openfile systemFileTable[SYSTEM_OPEN_MAX];
 
 void openfileIncrRefCount(struct openfile *of) {
   if (of!=NULL)
+  {
+    P(of->sem);
     of->countRef++;
+    V(of->sem);
+  }
 }
 
 #if USE_KERNEL_BUFFER
@@ -192,13 +201,28 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
     *errp = ENOENT;
     return -1;
   }
+
+  struct stat statbuf;
+  result = VOP_STAT(v, &statbuf);
+  if (result) {
+    *errp = ENOENT;
+    return -1;
+  }
+
   /* search system open file table */
   for (i=0; i<SYSTEM_OPEN_MAX; i++) {
     if (systemFileTable[i].vn==NULL) {
       of = &systemFileTable[i];
       of->vn = v;
-      of->offset = 0; // TODO: handle offset with append
       of->countRef = 1;
+      of->size = statbuf.st_size;
+      if (openflags & O_APPEND) 
+        of->offset = of->size;
+      else
+        of->offset = 0;
+      of->mode = statbuf.st_mode;
+      //kprintf("opening file with mode: %x", of->mode);
+      of->sem = sem_create("of_sem", 1);
       break;
     }
   }
@@ -257,10 +281,18 @@ sys_write(int fd, userptr_t buf_ptr, size_t size)
 {
   #if OPT_SYSCALLS
   int i;
+  int result;
   char *p = (char *)buf_ptr;
 
+  if ((curproc->fileTable[fd])->mode )
+
   if (fd!=STDOUT_FILENO && fd!=STDERR_FILENO) 
-    return file_write(fd, buf_ptr, size);
+  {
+    P((curproc->fileTable[fd])->sem);
+    result = file_write(fd, buf_ptr, size);
+    V((curproc->fileTable[fd])->sem);
+    return result;
+  }
 
   for (i=0; i<(int)size; i++) {
     putch(p[i]);
@@ -277,10 +309,16 @@ sys_read(int fd, userptr_t buf_ptr, size_t size)
 {
   #if OPT_SYSCALLS
   int i;
+  int result;
   char *p = (char *)buf_ptr;
 
   if (fd!=STDIN_FILENO)
-    return file_read(fd, buf_ptr, size);
+  {
+    P((curproc->fileTable[fd])->sem);
+    result = file_read(fd, buf_ptr, size);
+    V((curproc->fileTable[fd])->sem);
+    return result;
+  }
 
   for (i=0; i<(int)size; i++) {
     p[i] = getch();
@@ -299,14 +337,7 @@ sys_lseek(int fd, off_t offset, int whence, int *errp) {
   #if OPT_SYSCALLS
   if (fd < 0 || fd > OPEN_MAX || curproc->fileTable[fd] == NULL) { *errp=EBADF; return -1; }
   
-  off_t file_size;
-  
   struct openfile *of = curproc->fileTable[fd];
-
-  // how long is the file?
-  struct stat statbuf;
-  VOP_STAT(of->vn, &statbuf);
-  file_size = statbuf.st_size;
 
   switch (whence)
   {
@@ -319,7 +350,7 @@ sys_lseek(int fd, off_t offset, int whence, int *errp) {
       break;
 
     case SEEK_END:
-      of->offset = file_size + offset;
+      of->offset = of->size + offset;
       break;
     
     default:
@@ -327,8 +358,8 @@ sys_lseek(int fd, off_t offset, int whence, int *errp) {
       return -1;
   }
   
-  if (of->offset > file_size) 
-    of->offset = file_size;
+  if (of->offset > of->size) 
+    of->offset = of->size;
 
   return of->offset;
 
