@@ -9,6 +9,7 @@
 #include <kern/unistd.h>
 #include <kern/errno.h>
 #include <kern/fcntl.h>
+#include <kern/wait.h>
 #include <kern/stat.h>
 #include <clock.h>
 #include <copyinout.h>
@@ -34,10 +35,33 @@ sys__exit(int status)
 {
 #if OPT_SYSCALLS
   struct proc *p = curproc;
+  struct proc *parent_p;
+
   p->p_status = status & 0xff; /* just lower 8 bits returned */
+  p->p_exited = 1;
   proc_remthread(curthread);
 
   V(p->p_sem);
+
+  // need to post also the parent process child semaphore
+  if(p->pp_pid != 0){
+    parent_p = proc_search_pid(p->pp_pid);
+
+    if(parent_p == NULL || parent_p->p_exited){
+      // parent has exited so we can completely wipe out the current process data.
+      proc_destroy(p);
+    
+    }else{
+      // parent is still alive so we need to let him know we finished
+      // mutual exclusion to increase the number of children
+      spinlock_acquire(&(parent_p->p_lock));
+      parent_p->exited_children ++;
+      spinlock_release(&(parent_p->p_lock));
+      
+      V(parent_p->waiting_sem);
+      
+    }
+  }
 #else
   /* get address space of current process and destroy */
   struct addrspace *as = proc_getas();
@@ -53,14 +77,82 @@ int
 sys_waitpid(pid_t pid, userptr_t statusp, int options)
 {
 #if OPT_SYSCALLS
-  struct proc *p = proc_search_pid(pid);
+  struct proc *p;
   int s;
-  (void)options; /* not handled */
-  if (p==NULL) return -1;
-  s = proc_wait(p);
-  if (statusp!=NULL) 
-    *(int*)statusp = s;
-  return pid;
+  pid_t c_pid;
+  
+  // only option allowed is WNOHANG
+  if((options & !WNOHANG) != 0){
+    // other options were passed! must abort
+    if (statusp!=NULL) 
+          *(int*)statusp = EINVAL;
+      return -1;
+  }
+
+  if(pid < -1 || pid == 0){
+    kprintf("waiting on groups not implemeted yet!");
+    if (statusp!=NULL) 
+          *(int*)statusp = EINVAL;
+      return -1;
+
+  }else if(pid == -1){
+    // need to wait for any child process
+    // to do this we will add a semaphore initialized to 0 so that the process will wait
+    // any child process that will terminate will then post the the semaphore so that the parent will wake
+    // when the parent process wakes it will go through all of it's children to check if they are terminated
+    // and will see their return values.
+
+    if(proc_count_children(curproc->p_pid) ==  0){
+      if (statusp!=NULL) 
+          *(int*)statusp = ECHILD;
+      return -1;
+    }
+    if(options & WNOHANG){
+      // need to check if any child has finished
+      if(curproc->exited_children == 0){
+        return 0;
+      }
+    }
+
+    P(curproc->waiting_sem);
+    // need to find any child process and get the termination;
+    for(int j=1; j<PID_MAX; j++){
+      p = proc_search_pid(j);
+      if(p->pp_pid == curproc->p_pid && p->p_exited == 1){
+        // found the child process
+        c_pid = p->p_pid;
+
+        s = proc_wait(p);
+        if (statusp!=NULL) 
+          *(int*)statusp = s;
+        
+        /* decrease the children exited count */
+        spinlock_acquire(&(curproc->p_lock));
+        curproc->exited_children --;
+        spinlock_release(&(curproc->p_lock));
+
+        return c_pid;
+      }
+    }
+    // if i get here i couldnt find the child process that terminated.
+    return -1;
+  }else{
+    // need to wait for a specific process
+    p = proc_search_pid(pid);
+    int s;
+    (void)options; /* not handled */
+    if (p==NULL) return -1;
+
+    if((options & WNOHANG) && p->p_exited == 0){
+      return 0;
+    }
+
+    s = proc_wait(p);
+    if (statusp!=NULL) 
+      *(int*)statusp = s;
+    return pid;
+  }
+  
 #else
   (void)options; /* not handled */
   (void)pid;
@@ -130,8 +222,8 @@ int sys_fork(struct trapframe *ctf, pid_t *retval) {
   }
   memcpy(tf_child, ctf, sizeof(struct trapframe));
 
-  /* TO BE DONE: linking parent/child, so that child terminated 
-     on parent exit */
+  // link child to parent process
+  newp->pp_pid = curproc->p_pid;
 
   result = thread_fork(
 		 curthread->t_name, newp,
@@ -150,6 +242,12 @@ int sys_fork(struct trapframe *ctf, pid_t *retval) {
   return 0;
 }
 
+
+/*
+  TODO
+  - check the mode for the passed file
+  - kill all threads except the calling one
+*/
 int 
 sys_execv(userptr_t program, userptr_t * args) {
   #if OPT_SYSCALLS

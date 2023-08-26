@@ -74,6 +74,7 @@ proc_search_pid(pid_t pid) {
   struct proc *p;
   KASSERT(pid>=0&&pid<MAX_PROC);
   p = processTable.proc[pid];
+  if(p == NULL) return NULL;
   KASSERT(p->p_pid==pid);
   return p;
 #else
@@ -90,6 +91,8 @@ proc_init(struct proc *proc, const char *name) {
   spinlock_acquire(&processTable.lk);
   i = processTable.last_i+1;
   proc->p_pid = 0;
+  proc->pp_pid = 0;
+  proc->exited_children = 0;
   if (i>MAX_PROC) i=1;
   while (i!=processTable.last_i) {
     if (processTable.proc[i] == NULL) {
@@ -106,7 +109,9 @@ proc_init(struct proc *proc, const char *name) {
     panic("too many processes. proc table is full\n");
   }
   proc->p_status = 0;
+  proc->p_exited = 0;
   proc->p_sem = sem_create(name, 0);
+  proc->waiting_sem = sem_create(name, 0);
 
 #else
   (void)proc;
@@ -126,6 +131,7 @@ proc_end(struct proc *proc) {
   spinlock_release(&processTable.lk);
 
   sem_destroy(proc->p_sem);
+  sem_destroy(proc->waiting_sem);
 
 #else
   (void)proc;
@@ -437,7 +443,11 @@ proc_setas(struct addrspace *newas)
 void 
 proc_signal_end(struct proc *proc)
 {
+#if OPT_SYSCALLS
     V(proc->p_sem);
+#else
+	(void)proc;
+#endif
 }
 
 #if OPT_SYSCALLS
@@ -453,5 +463,18 @@ proc_file_table_copy(struct proc *psrc, struct proc *pdest) {
     }
   }
 }
+
+int 
+proc_count_children(pid_t pid){
+	int count = 0;
+	int i = 0;
+	while (i!=processTable.last_i) {
+    if (processTable.proc[i]->pp_pid == pid) {
+      count ++;
+    }
+    i++;
+  	}
+	return count;
+}	
 
 #endif
