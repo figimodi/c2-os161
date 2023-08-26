@@ -9,6 +9,7 @@
 #include <kern/unistd.h>
 #include <kern/errno.h>
 #include <kern/fcntl.h>
+#include <kern/stat.h>
 #include <clock.h>
 #include <copyinout.h>
 #include <syscall.h>
@@ -156,10 +157,13 @@ sys_execv(userptr_t program, userptr_t * args) {
   struct addrspace *old_as;
 
 	struct vnode *v;
+  // statbuf to check if passed file is actually executable
+  // struct stat *statbuf
+
 	vaddr_t entrypoint, stackptr;
 	int result;
     
-  int i = 0, length, tail;
+  int i = 0, length, tail, arg_length = 0;
 
   volatile userptr_t currptr;
   //userptr_t argv = NULL;
@@ -185,9 +189,16 @@ sys_execv(userptr_t program, userptr_t * args) {
   kfree(progname);
 	if (result) {
     // couldn't open the file to execute
-		return result;
+		return EACCES;
 	}
 
+  // result = VOP_STAT(v, statbuf);
+  // if(result){
+  //   kprintf("Couldnt check the file stats\n");
+  //   return result;
+  // }
+
+  // kprintf("The mode for the given file is %x\n", (int)statbuf->st_mode);
 	/* Create a new address space. Not a copy of the old one but a completely new as*/
 
 	new_as = as_create();
@@ -205,7 +216,7 @@ sys_execv(userptr_t program, userptr_t * args) {
 	if (result) {
 		/* p_addrspace will go away when curproc is destroyed */
 		vfs_close(v);
-		return result;
+		return EACCES;
 	}
 
 	/* Done with the file now. */
@@ -225,13 +236,21 @@ sys_execv(userptr_t program, userptr_t * args) {
       We now need to get all the arguments that were passed in
       the previous address space and store them in the new address space
     */
-   // first we need to identify the number of parameters that were passed
+    // first we need to identify the number of parameters that were passed
 
     as_deactivate();
     proc_setas(old_as);
     as_activate();
 
-    for(i=0; args[i]!=NULL; i++, argc++);
+    for(i=0; args[i]!=NULL; i++, argc++){
+      arg_length += strlen((char*)args[i]);
+    }
+
+    if(arg_length > ARG_MAX){
+      kprintf("Argments are too big. Max total size is %d\n", ARG_MAX);
+      return E2BIG;
+    }
+
 
     /*
       Need to save each argument into a kernel buffer so that we can then later move them into a new userptr
@@ -240,12 +259,14 @@ sys_execv(userptr_t program, userptr_t * args) {
 
     char ** kargs =kmalloc(argc * sizeof(char *));
 
+    if(kargs == NULL){
+      return ENOMEM;
+    }
+
     stackargs = (int*)kmalloc((argc+1) * sizeof(int *));
 
-    if(kargs == NULL){
-      kprintf("Not enoguh memory in kernel to move arguments :(\n");
+    if(stackargs == NULL){
       return ENOMEM;
-      // TODO? forse solo return ENOMEM oppure panic("I don't know how to handle this\n");
     }
 
     for(i=0; i<argc; i++){
