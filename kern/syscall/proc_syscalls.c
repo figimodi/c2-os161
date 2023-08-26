@@ -24,6 +24,7 @@
 #include <vfs.h>
 #include <fs.h>
 
+
 /*
  * simple proc management system calls
  */
@@ -163,7 +164,7 @@ sys_execv(userptr_t program, userptr_t * args) {
   volatile userptr_t currptr;
   //userptr_t argv = NULL;
 
-  int stackargs[10];
+  int * stackargs;
   
   int argc = 0;
   
@@ -216,6 +217,8 @@ sys_execv(userptr_t program, userptr_t * args) {
 		/* p_addrspace will go away when curproc is destroyed */
 		return result;
 	}
+
+  // both entry point and stack are now set for the new address space.
     
   if(args != NULL) {
     /*
@@ -237,8 +240,11 @@ sys_execv(userptr_t program, userptr_t * args) {
 
     char ** kargs =kmalloc(argc * sizeof(char *));
 
+    stackargs = (int*)kmalloc((argc+1) * sizeof(int *));
+
     if(kargs == NULL){
       kprintf("Not enoguh memory in kernel to move arguments :(\n");
+      return ENOMEM;
       // TODO? forse solo return ENOMEM oppure panic("I don't know how to handle this\n");
     }
 
@@ -250,6 +256,7 @@ sys_execv(userptr_t program, userptr_t * args) {
       if(result){
         kprintf("Copy argument did not work correctly\n");
       }
+
     }
 
     // all the arguments have been saved and the path has already been used so we can get rid of the old address space
@@ -265,7 +272,8 @@ sys_execv(userptr_t program, userptr_t * args) {
     currptr = (userptr_t)stackptr;
     for (i = 0; i < argc ; i++){
       // need to copy in the stack kargs[i];
-      length = strlen(kargs[i]);
+      // length must be incremented by one to consider the string termination character;
+      length = strlen(kargs[i]) + 1;
 
       // need to make sure that we are still alligned in the stack
       currptr -= length;
@@ -280,7 +288,11 @@ sys_execv(userptr_t program, userptr_t * args) {
       }
 
       // need to copy from kernel memory to user memory
-      copyout(kargs[i], (userptr_t)currptr, length);
+      result = copyout(kargs[i], (userptr_t)currptr, length);
+
+      if (result) {
+        kprintf("Couldnt copy argvù[%d] from kernel to new user space\n", i);
+      }
       kfree(kargs[i]);
 
 
@@ -288,6 +300,8 @@ sys_execv(userptr_t program, userptr_t * args) {
       
       stackargs[i] = (int)currptr;
     }
+
+    kfree(kargs);
 
     // last arguments must be null pointer
     stackargs[i] = 0;
@@ -303,11 +317,13 @@ sys_execv(userptr_t program, userptr_t * args) {
       }
     }
 
+    kfree(stackargs);
+
     enter_new_process(argc, (userptr_t)currptr,
 			  NULL /*userspace addr of environment*/,
 			  (vaddr_t)currptr, entrypoint);
   }else{
-
+    // no arguments were passed!
     as_deactivate();
     proc_setas(new_as);
     as_activate();

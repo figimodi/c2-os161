@@ -77,11 +77,11 @@ main(void)
 	args[1] = arg1;
 	args[2] = arg2;
 	args[3] = NULL;
-	strcpy(args[0], "add");
+	strcpy(args[0], "addd");
 	strcpy(args[1], "1");
 	strcpy(args[2], "2");
-	printf("Testing exec call!\n");
-	execv("testbin/mytest", args);
+	printf("Moving to add program...\n");
+	execv("testbin/add", args);
 
 	return 0;
 
