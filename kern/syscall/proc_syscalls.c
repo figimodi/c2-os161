@@ -134,6 +134,7 @@ sys_waitpid(pid_t pid, userptr_t statusp, int options)
         return c_pid;
       }
     }
+    // TODO add an error code for this case
     // if i get here i couldnt find the child process that terminated.
     return -1;
   }else{
@@ -242,12 +243,13 @@ int sys_fork(struct trapframe *ctf, pid_t *retval) {
   return 0;
 }
 
+static void kfree_kargs(char ** args, int argc){
+  for(int i=0; i<argc; i++){
+    kfree(args[i]);
+  }
+  kfree(args);
+}
 
-/*
-  TODO
-  - check the mode for the passed file
-  - kill all threads except the calling one
-*/
 int 
 sys_execv(userptr_t program, userptr_t * args) {
   #if OPT_SYSCALLS
@@ -361,21 +363,32 @@ sys_execv(userptr_t program, userptr_t * args) {
       return ENOMEM;
     }
 
-    stackargs = (int*)kmalloc((argc+1) * sizeof(int *));
-
-    if(stackargs == NULL){
-      return ENOMEM;
+    for(i=0; i<argc; i++){
+      kargs[i] = kmalloc(128);
+      if (kargs[i] == NULL){
+        kprintf("Couldn't allocate memory in kernel for argument passing\n");
+        kfree_kargs(kargs, i-1);
+        return ENOMEM;
+      }
     }
 
     for(i=0; i<argc; i++){
-      /* Save into kargs[i] the new */
+      /* Save into kargs[i] the all the arguments*/
       /* Hope we fit */
-      kargs[i] = kmalloc(128);
       result = copyinstr((userptr_t)args[i], kargs[i], 128, &actual);
       if(result){
-        kprintf("Copy argument did not work correctly\n");
+        kprintf("Copy argument from user to kernel did not work. Aborting\n");
+        kfree_kargs(kargs, argc);
+        return result;
       }
+    }
 
+    stackargs = (int*)kmalloc((argc+1) * sizeof(int *));
+
+    if(stackargs == NULL){
+      kprintf("Couldnt allocate memory in kernel to save new addresses. Aborting\n");
+      kfree_kargs(kargs, argc);
+      return ENOMEM;
     }
 
     // all the arguments have been saved and the path has already been used so we can get rid of the old address space
@@ -410,13 +423,14 @@ sys_execv(userptr_t program, userptr_t * args) {
       result = copyout(kargs[i], (userptr_t)currptr, length);
 
       if (result) {
-        kprintf("Couldnt copy argvù[%d] from kernel to new user space\n", i);
+        kprintf("Couldnt copy argv[%d] from kernel to new user space\n", i);
+        kfree_kargs(kargs, argc);
+        kfree(stackargs);
+        return result;
       }
+
       kfree(kargs[i]);
 
-
-      // do I need to zero out memory that is not copied? might already be zeroed out. check with debug
-      
       stackargs[i] = (int)currptr;
     }
 
@@ -432,7 +446,9 @@ sys_execv(userptr_t program, userptr_t * args) {
       result = copyout(stackargs + i, currptr, sizeof(char*));
 
       if(result){
-        kprintf("Sorry, couldnt copy address of argv :(\n");
+        kprintf("Sorry, couldnt copy address of parameter from kernel to userspace\n");
+        kfree(stackargs);
+        return result;
       }
     }
 
