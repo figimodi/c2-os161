@@ -331,10 +331,12 @@ sys_execv(userptr_t program, userptr_t * args) {
 
 int
 sys_getcwd(userptr_t buf_ptr, size_t size, int *retval) {
-    #if OPT_SYSCALLS
 
     if(buf_ptr==NULL)
       return EFAULT;
+
+    if(size == 0 && buf_ptr!=NULL)
+     return EINVAL;
 
     struct iovec iov;
     struct uio u;
@@ -357,71 +359,53 @@ sys_getcwd(userptr_t buf_ptr, size_t size, int *retval) {
       return result;
     }
 
-    *retval = size - u.uio_resid;;
+    int l = size - u.uio_resid;
 
-    return 0;
-
-    #endif
+    if(l<(int)strlen((char *)buf_ptr)) {
+      return ERANGE;
+    }
     
-    return 0;
+    *retval = l;
+
+    return result;
 }
-
-// int
-// sys_chdir(const char *path) {
-//     #if OPT_SYSCALLS
-
-//     if (path == NULL)
-//       return EFAULT;
-
-//     char * mypath = kmalloc(strlen(path));
-//     strcpy(mypath, path);
-//     int result = vfs_chdir(mypath);
-//     return result;
-
-//     #endif
-
-//     return 0;
-// }
 
 int
 sys_chdir(const char *path) {
-    #if OPT_SYSCALLS
+  #if OPT_SYSCALLS
 
     int result = 0;
 
     if (path == NULL)
       return EFAULT;
 
-    char * mypath = kmalloc(strlen(path));
-    if (mypath==NULL)
-      return EFAULT;
+    if(strlen(path)==0)
+      return ENOENT;
 
-    result = copyinstr((const_userptr_t)path, mypath, strlen(path) + 1, NULL);
-    if (result) 
-    {
-      kfree(mypath);
+    char * kbuf = kmalloc(strlen(path));
+    if (kbuf==NULL)
+      return ENOMEM;
+
+    result = copyinstr((const_userptr_t)path, kbuf, strlen(path) + 1, NULL);
+    if (result) {
+      kfree(kbuf);
       return result;
     }
-    
-    result = vfs_chdir(mypath);
-    // struct vnode *newcwd;
-    // result = vfs_open(mypath, O_RDONLY, 0, &newcwd);
-    // if (result)
-    // {
-    //   kfree(mypath);
-    //   return result;
-    // }
 
-    // struct vnode *oldcwd;
-    // oldcwd = curproc->p_cwd;
-    // curproc->p_cwd = newcwd;
+    struct vnode *v;
+    result = vfs_open((char *)kbuf, O_RDONLY, 0, &v);
 
-    // vfs_close(oldcwd);
-    // kfree(mypath);
+    if(result) {
+      kfree(kbuf);
+      return result;
+    }
 
+    result = vfs_chdir(kbuf);
+
+    kfree(kbuf);
     return result;
 
-    #endif
+  #endif
 
-    return 0;
+  return 0;
 }

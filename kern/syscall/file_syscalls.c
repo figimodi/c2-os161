@@ -349,6 +349,10 @@ sys_dup2(int oldfd, int newfd, int *errp) {
     sys_close(newfd);
   }
 
+  if(curproc->fileTable[oldfd] == NULL) {
+    return EBADF;
+  }
+
   struct openfile *of = curproc->fileTable[oldfd];
   curproc->fileTable[newfd] = of;
   openfileIncrRefCount(of);

@@ -41,15 +41,35 @@
 #include <unistd.h>
 #include <err.h>
 #include <kern/seek.h>
+#include <errno.h>
 
-int
-main(int argc, char *argv[])
-{	
-	printf("argc: %d\n", argc);
-	printf("argv: %x\n", (int)argv);
+extern int errno;
 
-	char * add = (char *)0x7ffffffc;
-	printf("%s\n", add);
-	printf("argv[0]: %s\n", argv[0]);
+int main() {	
+	char buff[20];
+
+	getcwd(buff, 19);
+	printf("Cur dir: %s\n", buff);
+	
+	chdir("man");
+	getcwd(buff, 19);
+	printf("Cur dir: %s\n", buff);
+	
+	chdir("..");
+	getcwd(buff, 19);
+	printf("Cur dir: %s\n\n", buff);
+
+	printf("Calling chdir with empty argument...\n");
+	chdir("");
+	printf("Error: %s\n\n", strerror(errno));
+	
+	printf("Calling chdir with NULL argument...\n");
+	chdir(NULL);
+	printf("Error: %s\n\n", strerror(errno));
+
+	printf("Calling getcwd with NULL argument...\n");
+	getcwd(NULL, 19);
+	printf("Error: %s\n\n", strerror(errno));
+
 	return 0;
 }
