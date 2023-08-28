@@ -330,17 +330,22 @@ sys_execv(userptr_t program, userptr_t * args) {
 }
 
 int
-sys_getcwd(userptr_t buf_ptr, size_t size, int *retval) {
+sys_getcwd(userptr_t buf_ptr, size_t size, int *errp) {
+    #if OPT_SYSCALLS
+    int result=0;
 
-    if(buf_ptr==NULL)
-      return EFAULT;
+    if(buf_ptr==NULL) {
+      *errp = EFAULT;
+      return result;
+    }
 
-    if(size == 0 && buf_ptr!=NULL)
-     return EINVAL;
+    if(size == 0 && buf_ptr!=NULL) {
+      *errp = EINVAL;
+      return result;
+    }
 
     struct iovec iov;
     struct uio u;
-    int result;
 
     iov.iov_ubase = buf_ptr;
     iov.iov_len = size;
@@ -353,59 +358,67 @@ sys_getcwd(userptr_t buf_ptr, size_t size, int *retval) {
     u.uio_rw = UIO_READ;
     u.uio_space = curproc->p_addrspace;
 
-
-    result = vfs_getcwd(&u);
-    if (result) {
+    *errp = vfs_getcwd(&u);
+    if (*errp) {
       return result;
     }
 
-    int l = size - u.uio_resid;
+    result = size - u.uio_resid;
 
-    if(l<(int)strlen((char *)buf_ptr)) {
-      return ERANGE;
+    if(result<(int)strlen((char *)buf_ptr)) {
+      *errp = ERANGE;
+      return result;
     }
-    
-    *retval = l;
 
     return result;
+
+    #endif
+    
+    return 0;
 }
 
 int
-sys_chdir(const char *path) {
-  #if OPT_SYSCALLS
+sys_chdir(const char *path, int *errp) {
+    #if OPT_SYSCALLS
 
     int result = 0;
 
-    if (path == NULL)
-      return EFAULT;
+    if(path==NULL) {
+      *errp = EFAULT;
+      return result;
+    }
 
-    if(strlen(path)==0)
-      return ENOENT;
+    if(strlen(path)==0) {
+      *errp = ENOENT;
+      return result;
+    }
 
     char * kbuf = kmalloc(strlen(path));
-    if (kbuf==NULL)
-      return ENOMEM;
+    if (kbuf==NULL) {
+      *errp = ENOMEM;
+      return result;
+    }
 
-    result = copyinstr((const_userptr_t)path, kbuf, strlen(path) + 1, NULL);
-    if (result) {
+    *errp = copyinstr((const_userptr_t)path, kbuf, strlen(path) + 1, NULL);
+    if (*errp) {
       kfree(kbuf);
       return result;
     }
 
     struct vnode *v;
-    result = vfs_open((char *)kbuf, O_RDONLY, 0, &v);
+    *errp = vfs_open((char *)kbuf, O_RDONLY, 0, &v);
 
-    if(result) {
+    if(*errp) {
       kfree(kbuf);
       return result;
     }
 
-    result = vfs_chdir(kbuf);
+    *errp = vfs_chdir(kbuf);
 
     kfree(kbuf);
     return result;
 
-  #endif
+    #endif
 
-  return 0;
+    return 0;
 }

@@ -88,14 +88,28 @@ sys_chdir(const char *path) {
 We first run some initial checks on the passed parameters: if there are some anomalies we return the proper error code (for example NULL path name passed as parameter).
 After that we allocate a kernel buffer and check for its correct allocation. Then we copy into it, through ```copyinstr```, the string passed as argument always checking for its correct execution. Then we check if the path is valid through ```vfs_open``` and finally trough ```vfs_chdir``` we change the directory and as usual check for any error. 
 
-```highlighted```
-
-
-
-
-## title
+## dup2
 ```c
-//c code section
+int sys_dup2(int oldfd, int newfd, int *errp) {
+  if (newfd<STDERR_FILENO || newfd>OPEN_MAX) { *errp=EBADF; return -1; }
+  if (oldfd<STDERR_FILENO || oldfd>OPEN_MAX || curproc->fileTable[oldfd]==NULL) { *errp=EBADF; return -1; }
+  if (oldfd==newfd) return newfd;
 
+  if(curproc->fileTable[newfd] != NULL){
+    // close the file for this process
+    sys_close(newfd);
+  }
+
+  if(curproc->fileTable[oldfd] == NULL) {
+    return EBADF;
+  }
+
+  struct openfile *of = curproc->fileTable[oldfd];
+  curproc->fileTable[newfd] = of;
+  openfileIncrRefCount(of);
+
+  return newfd;
+}
 ```
-text and ```highlighted```
+```dup2``` allows to create a new file descriptor that refers to the open file decscription of a descriptor passed as parameter.
+We initially check if old and new file descriptors are valid and then we save into the file table at position newFD the pointer to the openfile structure saved into the file table at oldFD.
