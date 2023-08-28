@@ -482,15 +482,22 @@ sys_execv(userptr_t program, userptr_t * args) {
 }
 
 int
-sys_getcwd(userptr_t buf_ptr, size_t size, int *retval) {
+sys_getcwd(userptr_t buf_ptr, size_t size, int *errp) {
     #if OPT_SYSCALLS
+    int result=0;
 
-    if(buf_ptr==NULL)
-      return EFAULT;
+    if(buf_ptr==NULL) {
+      *errp = EFAULT;
+      return result;
+    }
+
+    if(size == 0 && buf_ptr!=NULL) {
+      *errp = EINVAL;
+      return result;
+    }
 
     struct iovec iov;
     struct uio u;
-    int result;
 
     iov.iov_ubase = buf_ptr;
     iov.iov_len = size;
@@ -503,74 +510,64 @@ sys_getcwd(userptr_t buf_ptr, size_t size, int *retval) {
     u.uio_rw = UIO_READ;
     u.uio_space = curproc->p_addrspace;
 
-
-    result = vfs_getcwd(&u);
-    if (result) {
+    *errp = vfs_getcwd(&u);
+    if (*errp) {
       return result;
     }
 
-    *retval = size - u.uio_resid;;
+    result = size - u.uio_resid;
 
-    return 0;
+    if(result<(int)strlen((char *)buf_ptr)) {
+      *errp = ERANGE;
+      return result;
+    }
+
+    return result;
 
     #endif
     
     return 0;
 }
 
-// int
-// sys_chdir(const char *path) {
-//     #if OPT_SYSCALLS
-
-//     if (path == NULL)
-//       return EFAULT;
-
-//     char * mypath = kmalloc(strlen(path));
-//     strcpy(mypath, path);
-//     int result = vfs_chdir(mypath);
-//     return result;
-
-//     #endif
-
-//     return 0;
-// }
-
 int
-sys_chdir(const char *path) {
+sys_chdir(const char *path, int *errp) {
     #if OPT_SYSCALLS
 
     int result = 0;
 
-    if (path == NULL)
-      return EFAULT;
-
-    char * mypath = kmalloc(strlen(path));
-    if (mypath==NULL)
-      return EFAULT;
-
-    result = copyinstr((const_userptr_t)path, mypath, strlen(path) + 1, NULL);
-    if (result) 
-    {
-      kfree(mypath);
+    if(path==NULL) {
+      *errp = EFAULT;
       return result;
     }
-    
-    result = vfs_chdir(mypath);
-    // struct vnode *newcwd;
-    // result = vfs_open(mypath, O_RDONLY, 0, &newcwd);
-    // if (result)
-    // {
-    //   kfree(mypath);
-    //   return result;
-    // }
 
-    // struct vnode *oldcwd;
-    // oldcwd = curproc->p_cwd;
-    // curproc->p_cwd = newcwd;
+    if(strlen(path)==0) {
+      *errp = ENOENT;
+      return result;
+    }
 
-    // vfs_close(oldcwd);
-    // kfree(mypath);
+    char * kbuf = kmalloc(strlen(path));
+    if (kbuf==NULL) {
+      *errp = ENOMEM;
+      return result;
+    }
 
+    *errp = copyinstr((const_userptr_t)path, kbuf, strlen(path) + 1, NULL);
+    if (*errp) {
+      kfree(kbuf);
+      return result;
+    }
+
+    struct vnode *v;
+    *errp = vfs_open((char *)kbuf, O_RDONLY, 0, &v);
+
+    if(*errp) {
+      kfree(kbuf);
+      return result;
+    }
+
+    *errp = vfs_chdir(kbuf);
+
+    kfree(kbuf);
     return result;
 
     #endif
