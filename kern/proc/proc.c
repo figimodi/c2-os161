@@ -469,8 +469,8 @@ int
 proc_count_children(pid_t pid){
 	int count = 0;
 	int i = 0;
-	while (i!=processTable.last_i) {
-    if (processTable.proc[i]->pp_pid == pid) {
+	while (i<=processTable.last_i) {
+    if (processTable.proc[i] && processTable.proc[i]->pp_pid == pid) {
       count ++;
     }
     i++;

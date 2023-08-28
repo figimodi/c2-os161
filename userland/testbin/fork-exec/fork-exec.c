@@ -46,43 +46,37 @@ main(void)
 {	
 	printf("**************fork-exec**************\n");
 
-	// printf("My current pid is %d\n", getpid());
-	// __pid_t c_pid;
+	printf("Will fork, parent will wait, child will exec add\n");
 
-	// c_pid = fork();
+	__pid_t c_pid = fork();
+	int ret, stat;
 
-	// switch (c_pid)
-	// {
-	// case -1:
-	// 	printf("Couldnt fork, something happened\n");
-	// 	break;
+	if(c_pid){
+		/* Parent process */
+		ret = waitpid(c_pid, &stat, 0);
+		if(ret == -1){
+			printf("Waitpid failed\n");
+		}else{
+			printf("Child process exited with code %d\n", stat);
+		}
+	}else{
+		/* Child process */
+		printf("Will call exec with parameters 1 and 2\n");
+		char *args[4];
+		char arg0[10];
+		char arg1[10];
+		char arg2[10];
+		args[0] = arg0;
+		args[1] = arg1;
+		args[2] = arg2;
+		args[3] = NULL;
+		strcpy(args[0], "add");
+		strcpy(args[1], "1");
+		strcpy(args[2], "2");
+		printf("Moving to add program...\n");
+		ret = execv("testbin/add", args);
 
-	// case 0:
-	// 	printf("Hello from the child process\npid = %d\n", getpid());
-	// 	break;
-	
-	// default:
-	// 	//  parent process
-	// 	// parent will wait for the child
-	// 	waitpid(c_pid, NULL, 0);
-	// 	printf("Hello from the parent process\npid = %d\n", getpid());
-	// 	break;
-	// }
-
-	char *args[4];
-	char arg0[10];
-	char arg1[10];
-	char arg2[10];
-	args[0] = arg0;
-	args[1] = arg1;
-	args[2] = arg2;
-	args[3] = NULL;
-	strcpy(args[0], "addd");
-	strcpy(args[1], "1");
-	strcpy(args[2], "2");
-	printf("Moving to add program...\n");
-	execv("testbin/add", args);
-
+		printf("Execv returned, big error --> %d\n", ret);
+	}
 	return 0;
-
 }
