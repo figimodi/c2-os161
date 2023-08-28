@@ -9,6 +9,8 @@
 #include <kern/unistd.h>
 #include <kern/errno.h>
 #include <kern/fcntl.h>
+#include <kern/wait.h>
+#include <kern/stat.h>
 #include <clock.h>
 #include <copyinout.h>
 #include <syscall.h>
@@ -24,6 +26,7 @@
 #include <vfs.h>
 #include <fs.h>
 
+
 /*
  * simple proc management system calls
  */
@@ -32,10 +35,34 @@ sys__exit(int status)
 {
 #if OPT_SYSCALLS
   struct proc *p = curproc;
+  struct proc *parent_p;
+
+  /* Save status and set exited flag */
   p->p_status = status & 0xff; /* just lower 8 bits returned */
+  p->p_exited = 1;
   proc_remthread(curthread);
 
   V(p->p_sem);
+
+  /* If process has a parent, need to signal it */
+  if(p->pp_pid != 0){
+    parent_p = proc_search_pid(p->pp_pid);
+
+    if(parent_p == NULL || parent_p->p_exited){
+      /* Parent has already been waited on and is now destroied or has called exit */
+      proc_destroy(p);
+    
+    }else{
+      
+      /* Parent is still alive so increment exited children counter */
+      spinlock_acquire(&(parent_p->p_lock));
+      parent_p->exited_children ++;
+      spinlock_release(&(parent_p->p_lock));
+      
+      /* Post its semaphore for child waiting */
+      V(parent_p->waiting_sem);
+    }
+  }
 #else
   /* get address space of current process and destroy */
   struct addrspace *as = proc_getas();
@@ -51,18 +78,90 @@ int
 sys_waitpid(pid_t pid, userptr_t statusp, int options)
 {
 #if OPT_SYSCALLS
-  struct proc *p = proc_search_pid(pid);
+  struct proc *p;
   int s;
-  (void)options; /* not handled */
-  if (p==NULL) return -1;
-  s = proc_wait(p);
-  if (statusp!=NULL) 
-    *(int*)statusp = s;
-  return pid;
+  pid_t c_pid;
+  
+  /* Only option allowed is WNOHANG */
+  if((options & !WNOHANG) != 0){
+    // other options were passed! must abort
+    if (statusp!=NULL) 
+          *(int*)statusp = EINVAL;
+      return -1;
+  }
+
+  /* Can only wait for specific pid or for any child */
+  if(pid < -1 || pid == 0){
+    kprintf("Waiting on groups not implemeted yet!");
+    if (statusp!=NULL) 
+          *(int*)statusp = EINVAL;
+      return -1;
+
+  }else if(pid == -1){
+    /* Waiting for any child process */
+
+    /* Return error if the calling process does not have any child */
+    if(proc_count_children(curproc->p_pid) ==  0){
+      if (statusp!=NULL) 
+          *(int*)statusp = ECHILD;
+      return -1;
+    }
+
+    if(options & WNOHANG){
+      /* Will simply check the counter in the process struct*/
+      if(curproc->exited_children == 0){
+        return 0;
+      }
+    }
+
+    /* This call wont block because at least a child has exited */
+    P(curproc->waiting_sem);
+
+    /* Detect which child pid has exited */
+    for(int j=1; j<PID_MAX; j++){
+      p = proc_search_pid(j);
+      if(p->pp_pid == curproc->p_pid && p->p_exited == 1){
+        /* Child found */
+        c_pid = p->p_pid;
+
+        /* Call proc_wait on the child so that it will be destroied */
+        s = proc_wait(p);
+        if (statusp!=NULL) 
+          *(int*)statusp = s;
+        
+        /* decrease the children exited count */
+        spinlock_acquire(&(curproc->p_lock));
+        curproc->exited_children --;
+        spinlock_release(&(curproc->p_lock));
+
+        return c_pid;
+      }
+    }
+    
+    /* I couldnt find the child that terminated so will return error */
+    if (statusp!=NULL) 
+      *(int*)statusp = ECHILD;
+    return -1;
+
+  }else{
+    
+    /* Waiting on a specific process */
+    p = proc_search_pid(pid);
+    int s;
+
+    if (p==NULL) return -1;
+
+    /* If option is WNOHANG and p has not yet exited */
+    if((options & WNOHANG) && p->p_exited == 0){
+      return 0;
+    }
+
+    s = proc_wait(p);
+    if (statusp!=NULL) 
+      *(int*)statusp = s;
+    return pid;
+  }
 #else
-  (void)options; /* not handled */
-  (void)pid;
-  (void)statusp;
   return -1;
 #endif
 }
@@ -113,7 +212,7 @@ int sys_fork(struct trapframe *ctf, pid_t *retval) {
   }
 
   /* done here as we need to duplicate the address space 
-     of thbe current process */
+     of the current process */
   as_copy(curproc->p_addrspace, &(newp->p_addrspace));
   if(newp->p_addrspace == NULL){
     proc_destroy(newp); 
@@ -128,8 +227,8 @@ int sys_fork(struct trapframe *ctf, pid_t *retval) {
   }
   memcpy(tf_child, ctf, sizeof(struct trapframe));
 
-  /* TO BE DONE: linking parent/child, so that child terminated 
-     on parent exit */
+  /* Link child to parent process */
+  newp->pp_pid = curproc->p_pid;
 
   result = thread_fork(
 		 curthread->t_name, newp,
@@ -148,6 +247,14 @@ int sys_fork(struct trapframe *ctf, pid_t *retval) {
   return 0;
 }
 
+/* Frees args[i] up to i = argc - 1 and then frees args */
+static void kfree_kargs(char ** args, int argc){
+  for(int i=0; i<argc; i++){
+    kfree(args[i]);
+  }
+  kfree(args);
+}
+
 int 
 sys_execv(userptr_t program, userptr_t * args) {
   #if OPT_SYSCALLS
@@ -155,17 +262,15 @@ sys_execv(userptr_t program, userptr_t * args) {
   struct addrspace *old_as;
 
 	struct vnode *v;
+
 	vaddr_t entrypoint, stackptr;
-	int result;
     
-  int i = 0, length, tail;
+  int result, length, tail, arg_length = 0, i = 0, argc = 0;
 
   volatile userptr_t currptr;
   //userptr_t argv = NULL;
 
-  int stackargs[10];
-  
-  int argc = 0;
+  int * stackargs;
   
 	KASSERT(proc_getas() != NULL);
     
@@ -173,22 +278,19 @@ sys_execv(userptr_t program, userptr_t * args) {
   size_t actual;
   result = copyinstr((const_userptr_t) program, progname, PATH_MAX, &actual);
   if(result) {
-      // couldn't get the program name from the userspace
       kfree(progname);
       return result;
   }
     
 	/* Open the file. */
 	result = vfs_open(progname, O_RDONLY, 0, &v);
-  // do not need the name of the program anymore
   kfree(progname);
+
 	if (result) {
-    // couldn't open the file to execute
-		return result;
+		return EACCES;
 	}
 
 	/* Create a new address space. Not a copy of the old one but a completely new as*/
-
 	new_as = as_create();
 	if (new_as == NULL) {
 		vfs_close(v);
@@ -202,9 +304,13 @@ sys_execv(userptr_t program, userptr_t * args) {
 	/* Load the executable. */
 	result = load_elf(v, &entrypoint);
 	if (result) {
-		/* p_addrspace will go away when curproc is destroyed */
 		vfs_close(v);
-		return result;
+		return EACCES;
+    /* Go back to initial addres space and destroy new one */
+    as_deactivate();
+    proc_setas(old_as);
+    as_activate();
+    as_destroy(new_as);
 	}
 
 	/* Done with the file now. */
@@ -213,110 +319,156 @@ sys_execv(userptr_t program, userptr_t * args) {
 	/* Define the user stack in the address space */
 	result = as_define_stack(new_as, &stackptr);
 	if (result) {
-		/* p_addrspace will go away when curproc is destroyed */
+    /* Go back to initial addres space and destroy new one */
+    as_deactivate();
+    proc_setas(old_as);
+    as_activate();
+    as_destroy(new_as);
 		return result;
 	}
+
+ /* Both entry point and stack are now set for the new address space */
     
   if(args != NULL) {
     /*
       We now need to get all the arguments that were passed in
       the previous address space and store them in the new address space
     */
-   // first we need to identify the number of parameters that were passed
 
     as_deactivate();
     proc_setas(old_as);
     as_activate();
 
-    for(i=0; args[i]!=NULL; i++, argc++);
+    /* Counting args */
+    for(i=0; args[i]!=NULL; i++, argc++){
+      arg_length += strlen((char*)args[i]);
+    }
 
-    /*
-      Need to save each argument into a kernel buffer so that we can then later move them into a new userptr
+    /* Check max size */
+    if(arg_length > ARG_MAX){
+      kprintf("Argments are too big. Max total size is %d\n", ARG_MAX);
+      return E2BIG;
+    }
 
-    */
-
+    /* Save args in kernel buffers */
     char ** kargs =kmalloc(argc * sizeof(char *));
 
     if(kargs == NULL){
-      kprintf("Not enoguh memory in kernel to move arguments :(\n");
-      // TODO? forse solo return ENOMEM oppure panic("I don't know how to handle this\n");
+      as_destroy(new_as);
+      return ENOMEM;
     }
 
     for(i=0; i<argc; i++){
-      /* Save into kargs[i] the new */
-      /* Hope we fit */
       kargs[i] = kmalloc(128);
-      result = copyinstr((userptr_t)args[i], kargs[i], 128, &actual);
-      if(result){
-        kprintf("Copy argument did not work correctly\n");
+      if (kargs[i] == NULL){
+        kprintf("Couldn't allocate memory in kernel for argument passing\n");
+        kfree_kargs(kargs, i-1);
+        as_destroy(new_as);
+        return ENOMEM;
       }
     }
 
-    // all the arguments have been saved and the path has already been used so we can get rid of the old address space
-    
+    /* Save into kargs[i] the user argument args[i] */
+
+    for(i=0; i<argc; i++){
+      /* Hope we fit */
+      result = copyinstr((userptr_t)args[i], kargs[i], 128, &actual);
+      if(result){
+        kprintf("Copy argument from user to kernel did not work. Aborting\n");
+        kfree_kargs(kargs, argc);
+        as_destroy(new_as);
+        return result;
+      }
+    }
+
+    stackargs = (int*)kmalloc((argc+1) * sizeof(int *));
+
+    if(stackargs == NULL){
+      kprintf("Couldnt allocate memory in kernel to save new addresses. Aborting\n");
+      kfree_kargs(kargs, argc);
+      as_destroy(new_as);
+      return ENOMEM;
+    }
+
+    /* Move to new address space */
     as_deactivate();
     proc_setas(new_as);
     as_activate();
-    as_destroy(old_as);
-
-    // now I need to copy all these parameters in the new address space.
-
-    // starting from the new stackptr
+  
+    /* Copying all arguments in userspace starting from address stackptr */
     currptr = (userptr_t)stackptr;
     for (i = 0; i < argc ; i++){
-      // need to copy in the stack kargs[i];
-      length = strlen(kargs[i]);
+      
+      /* Consider space for string termination */
+      length = strlen(kargs[i]) + 1;
 
-      // need to make sure that we are still alligned in the stack
+      /* Check allignment in the stack */
       currptr -= length;
       tail = 0;
 
       if((int)currptr & 0x3){
-        // not alligned!
         tail = (int)currptr & 0x3;
-
-        // will now subtract the tail to be at the beginning of the word
         currptr -= tail;
       }
 
-      // need to copy from kernel memory to user memory
-      copyout(kargs[i], (userptr_t)currptr, length);
+      /* Copy from kernel to user memory */
+      result = copyout(kargs[i], (userptr_t)currptr, length);
+
+      if (result) {
+        kprintf("Couldnt copy argv[%d] from kernel to new user space\n", i);
+        kfree_kargs(kargs, argc);
+        kfree(stackargs);
+        as_deactivate();
+        proc_setas(old_as);
+        as_activate();
+        as_destroy(new_as);
+        return result;
+      }
+
       kfree(kargs[i]);
 
-
-      // do I need to zero out memory that is not copied? might already be zeroed out. check with debug
-      
+      /* Store the address in userspace of the current arg */
       stackargs[i] = (int)currptr;
     }
 
-    // last arguments must be null pointer
+    kfree(kargs);
+
+    /* Last arg must be null pointer */
     stackargs[i] = 0;
 
-    // need to save in memory also the pointers to the arguments in user memory;
-
+    /* Save in memory the new argv (pointers to arguments) */
     for (i=argc; i>=0; i--){
       currptr -= sizeof(char *);
       result = copyout(stackargs + i, currptr, sizeof(char*));
 
       if(result){
-        kprintf("Sorry, couldnt copy address of argv :(\n");
+        kprintf("Sorry, couldnt copy address of parameter from kernel to userspace\n");
+        kfree(stackargs);
+        as_deactivate();
+        proc_setas(old_as);
+        as_activate();
+        as_destroy(new_as);
+        return result;
       }
     }
+
+    kfree(stackargs);
 
     enter_new_process(argc, (userptr_t)currptr,
 			  NULL /*userspace addr of environment*/,
 			  (vaddr_t)currptr, entrypoint);
   }else{
 
+    /* No arguments were passed */
     as_deactivate();
     proc_setas(new_as);
     as_activate();
     as_destroy(old_as);
 
-	/* Warp to user mode. */
-	enter_new_process(0, NULL,
-			  NULL /*userspace addr of environment*/,
-			  stackptr, entrypoint);
+    /* Warp to user mode. */
+    enter_new_process(0, NULL,
+          NULL /*userspace addr of environment*/,
+          stackptr, entrypoint);
   }
   
 

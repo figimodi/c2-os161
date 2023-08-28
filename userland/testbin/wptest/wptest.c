@@ -29,54 +29,41 @@
 
 /*
  * Simple program to add two numbers (given in as arguments). Used to
- * test argument passing to child processePs.
+ * test argument passing to child processes.
  *
  * Intended for the basic system calls assignment; this should work
  * once execv() argument handling is implemented.
  */
 
+#include <sys/types.h>
+#include <kern/wait.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
 #include <err.h>
-#include <string.h>
 
 int
 main(void)
-{	
-	printf("**************fork-exec**************\n");
+{
+	pid_t pid;
+	int rv, error;
 
-	printf("Will fork, parent will wait, child will exec add\n");
+	pid = fork();
 
-	__pid_t c_pid = fork();
-	int ret, stat;
-
-	if(c_pid){
-		/* Parent process */
-		ret = waitpid(c_pid, &stat, 0);
-		if(ret == -1){
-			printf("Waitpid failed\n");
-		}else{
-			printf("Child process exited with code %d\n", stat);
+	if(pid){
+		//parent process
+		// will wait for the child with option noHANG
+		rv = waitpid(pid, &error, WNOHANG);
+		(void)rv;
+		for(int i = 0; i<10; i++){
+			printf("b");
 		}
+		
 	}else{
-		/* Child process */
-		printf("Will call exec with parameters 1 and 2\n");
-		char *args[4];
-		char arg0[10];
-		char arg1[10];
-		char arg2[10];
-		args[0] = arg0;
-		args[1] = arg1;
-		args[2] = arg2;
-		args[3] = NULL;
-		strcpy(args[0], "add");
-		strcpy(args[1], "1");
-		strcpy(args[2], "2");
-		printf("Moving to add program...\n");
-		ret = execv("testbin/add", args);
-
-		printf("Execv returned, big error --> %d\n", ret);
+		for(int i = 0; i<1000; i++){
+			printf("a");
+		}
 	}
 	return 0;
 }

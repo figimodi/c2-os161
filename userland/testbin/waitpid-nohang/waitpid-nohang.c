@@ -27,69 +27,42 @@
  * SUCH DAMAGE.
  */
 
-/*
- * Simple program to add two numbers (given in as arguments). Used to
- * test argument passing to child processePs.
- *
- * Intended for the basic system calls assignment; this should work
- * once execv() argument handling is implemented.
- */
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 #include <err.h>
-#include <kern/seek.h>
-#include <kern/fcntl.h>
+#include <string.h>
+#include <kern/wait.h>
 
 int
-// main(int argc, char *argv[])
-// {	
-main()
+main(void)
 {	
+	printf("**************waitpid-nohang**************\n");
 
-	// printf("argc: %d\n", argc);
-	// printf("argv: %x\n", (int)argv);
+	printf("\n\n fork, parent will call waitpid on child with NOHANG option\n\n");
 
-	// char * add = (char *)0x7ffffffc;
-	// printf("%s\n", add);
-	// printf("argv[0]: %s\n", argv[0]);
-	// return 0;
+	__pid_t c_pid = fork();
+	int ret, stat;
 
-	printf("\n\n*******************TEST FILE PERMISSIONS*******************\n");
-	char buffer[128];
-	int fd, result;
-	fd = open("fileprova", O_WRONLY, NULL);
-	printf("trying to read a WRITEONLY file...\n");
-	result = read(fd, buffer, 128);
-	if(result >= 0)
-		printf("I tried to read, and i read %s\n", buffer);
-	else
-		printf("I couldn't read a WRITEONLY file\n");
-	close(fd);
+	if(c_pid){
+		/* Parent process */
+		ret = waitpid(-1, &stat, WNOHANG);
+		if(ret == 0){
+			printf("Waitpid returned\n");
+		}else{
+			printf("Waitpid returned with error\n");
+		}
+	}else{
+		/* Child process */
+		char *args[2];
+		char arg0[10];
+		args[0] = arg0;
+		args[1] = NULL;
+		strcpy(args[0], "palin");
+		ret = execv("testbin/palin", args);
 
-	fd = open("fileprova", O_RDONLY, NULL);
-	printf("trying to write a READONLY file...\n");
-	strcpy(buffer, "adding stuff");
-	result = write(fd, buffer, strlen(buffer));
-	if(result >= 0)
-		printf("I tried to wrote, and i wrote %s\n", buffer);
-	else
-		printf("I couldn't wrote a READONLY file\n");
-	close(fd);
-
-	fd = open("fileprova", O_RDWR | O_APPEND, NULL);
-	read(fd, buffer, 128);
-	printf("trying to append into this file:\n%s\n", buffer);
-	strcpy(buffer, "appending stuff");
-	result = write(fd, buffer, strlen(buffer));
-	if(result)
-	{
-		read(fd, buffer, 128);
-		printf("I tried to append, now the file is:\n%s\n", buffer);
+		printf("Execv returned, big error --> %d\n", ret);
 	}
-	else
-		printf("I couldn't wrote a READONLY file\n");
-	close(fd);
+	return 0;
 }
