@@ -464,6 +464,7 @@ proc_file_table_copy(struct proc *psrc, struct proc *pdest) {
   }
 }
 
+/* Returns the number of children for the given process */
 int 
 proc_count_children(pid_t pid){
 	int count = 0;
