@@ -303,7 +303,7 @@ int
 sys_write(int fd, userptr_t buf_ptr, size_t size, int *errp)
 {
   #if OPT_SYSCALLS
-  int i, result, file_mode;
+  int i, result = 0, file_mode;
   off_t recovery_offset;
   char *p = (char *)buf_ptr;
 
@@ -340,7 +340,7 @@ sys_write(int fd, userptr_t buf_ptr, size_t size, int *errp)
       return -1;
     }
     result = file_write(fd, buf_ptr, size);
-    if (result)
+    if (result < 0)
     {
       /* set back the original offset (atomic operation in case of O_APPEND)*/
       sys_lseek(fd, recovery_offset, SEEK_SET, &result);
