@@ -75,7 +75,7 @@ sys__exit(int status)
 }
 
 int
-sys_waitpid(pid_t pid, userptr_t statusp, int options)
+sys_waitpid(pid_t pid, userptr_t statusp, int options, int *errp)
 {
 #if OPT_SYSCALLS
   struct proc *p;
@@ -86,7 +86,8 @@ sys_waitpid(pid_t pid, userptr_t statusp, int options)
   if((options & !WNOHANG) != 0){
     // other options were passed! must abort
     if (statusp!=NULL) 
-          *(int*)statusp = EINVAL;
+      *(int*)statusp = EINVAL;
+      *errp = EINVAL;
       return -1;
   }
 
@@ -94,7 +95,8 @@ sys_waitpid(pid_t pid, userptr_t statusp, int options)
   if(pid < -1 || pid == 0){
     kprintf("Waiting on groups not implemeted yet!");
     if (statusp!=NULL) 
-          *(int*)statusp = EINVAL;
+      *(int*)statusp = EINVAL;
+      *errp = EINVAL;
       return -1;
 
   }else if(pid == -1){
@@ -103,7 +105,8 @@ sys_waitpid(pid_t pid, userptr_t statusp, int options)
     /* Return error if the calling process does not have any child */
     if(proc_count_children(curproc->p_pid) ==  0){
       if (statusp!=NULL) 
-          *(int*)statusp = ECHILD;
+        *(int*)statusp = ECHILD;
+        *errp = ECHILD;
       return -1;
     }
 
@@ -141,6 +144,8 @@ sys_waitpid(pid_t pid, userptr_t statusp, int options)
     /* I couldnt find the child that terminated so will return error */
     if (statusp!=NULL) 
       *(int*)statusp = ECHILD;
+
+    *errp = ECHILD;
     return -1;
 
   }else{
@@ -149,7 +154,11 @@ sys_waitpid(pid_t pid, userptr_t statusp, int options)
     p = proc_search_pid(pid);
     int s;
 
-    if (p==NULL) return -1;
+    if (p==NULL)
+    {
+      *errp = ECHILD;
+      return -1;
+    }
 
     /* If option is WNOHANG and p has not yet exited */
     if((options & WNOHANG) && p->p_exited == 0){
@@ -198,7 +207,7 @@ call_enter_forked_process(void *tfv, unsigned long dummy) {
 }
 
 
-int sys_fork(struct trapframe *ctf, pid_t *retval) {
+pid_t sys_fork(struct trapframe *ctf, int *errp) {
   #if OPT_SYSCALLS
   struct trapframe *tf_child;
   struct proc *newp;
@@ -208,7 +217,8 @@ int sys_fork(struct trapframe *ctf, pid_t *retval) {
 
   newp = proc_create_runprogram(curproc->p_name);
   if (newp == NULL) {
-    return ENOMEM;
+    *errp = ENOMEM;
+    return -1;
   }
 
   /* done here as we need to duplicate the address space 
@@ -216,14 +226,16 @@ int sys_fork(struct trapframe *ctf, pid_t *retval) {
   as_copy(curproc->p_addrspace, &(newp->p_addrspace));
   if(newp->p_addrspace == NULL){
     proc_destroy(newp); 
-    return ENOMEM; 
+    *errp = ENOMEM;
+    return -1;
   }
 
   /* we need a copy of the parent's trapframe */
   tf_child = kmalloc(sizeof(struct trapframe));
   if(tf_child == NULL){
     proc_destroy(newp);
-    return ENOMEM; 
+    *errp = ENOMEM;
+    return -1;
   }
   memcpy(tf_child, ctf, sizeof(struct trapframe));
 
@@ -238,10 +250,11 @@ int sys_fork(struct trapframe *ctf, pid_t *retval) {
   if (result){
     proc_destroy(newp);
     kfree(tf_child);
-    return ENOMEM;
+    *errp = ENOMEM;
+    return -1;
   }
 
-  *retval = newp->p_pid;
+  return newp->p_pid;
   #endif
   
   return 0;
@@ -256,7 +269,7 @@ static void kfree_kargs(char ** args, int argc){
 }
 
 int 
-sys_execv(userptr_t program, userptr_t * args) {
+sys_execv(userptr_t program, userptr_t * args, int *errp) {
   #if OPT_SYSCALLS
   struct addrspace *new_as;
   struct addrspace *old_as;
@@ -279,7 +292,8 @@ sys_execv(userptr_t program, userptr_t * args) {
   result = copyinstr((const_userptr_t) program, progname, PATH_MAX, &actual);
   if(result) {
       kfree(progname);
-      return result;
+      *errp = EIO;
+      return -1;
   }
     
 	/* Open the file. */
@@ -287,14 +301,16 @@ sys_execv(userptr_t program, userptr_t * args) {
   kfree(progname);
 
 	if (result) {
-		return EACCES;
+		*errp = EACCES;
+    return -1;
 	}
 
 	/* Create a new address space. Not a copy of the old one but a completely new as*/
 	new_as = as_create();
 	if (new_as == NULL) {
 		vfs_close(v);
-		return ENOMEM;
+		*errp = ENOMEM;
+    return -1;
 	}
 
 	/* Switch to it and activate it. */
@@ -305,12 +321,14 @@ sys_execv(userptr_t program, userptr_t * args) {
 	result = load_elf(v, &entrypoint);
 	if (result) {
 		vfs_close(v);
-		return EACCES;
     /* Go back to initial addres space and destroy new one */
     as_deactivate();
     proc_setas(old_as);
     as_activate();
     as_destroy(new_as);
+		
+    *errp = EACCES;
+    return -1;
 	}
 
 	/* Done with the file now. */
@@ -324,7 +342,9 @@ sys_execv(userptr_t program, userptr_t * args) {
     proc_setas(old_as);
     as_activate();
     as_destroy(new_as);
-		return result;
+		
+    *errp = ENOMEM;
+    return -1;
 	}
 
  /* Both entry point and stack are now set for the new address space */
@@ -347,7 +367,8 @@ sys_execv(userptr_t program, userptr_t * args) {
     /* Check max size */
     if(arg_length > ARG_MAX){
       kprintf("Argments are too big. Max total size is %d\n", ARG_MAX);
-      return E2BIG;
+      *errp = E2BIG;
+      return -1;
     }
 
     /* Save args in kernel buffers */
@@ -355,7 +376,8 @@ sys_execv(userptr_t program, userptr_t * args) {
 
     if(kargs == NULL){
       as_destroy(new_as);
-      return ENOMEM;
+      *errp = ENOMEM;
+      return -1;
     }
 
     for(i=0; i<argc; i++){
@@ -364,7 +386,8 @@ sys_execv(userptr_t program, userptr_t * args) {
         kprintf("Couldn't allocate memory in kernel for argument passing\n");
         kfree_kargs(kargs, i-1);
         as_destroy(new_as);
-        return ENOMEM;
+        *errp = ENOMEM;
+        return -1;
       }
     }
 
@@ -377,7 +400,8 @@ sys_execv(userptr_t program, userptr_t * args) {
         kprintf("Copy argument from user to kernel did not work. Aborting\n");
         kfree_kargs(kargs, argc);
         as_destroy(new_as);
-        return result;
+        *errp = EIO;
+        return -1;
       }
     }
 
@@ -387,7 +411,8 @@ sys_execv(userptr_t program, userptr_t * args) {
       kprintf("Couldnt allocate memory in kernel to save new addresses. Aborting\n");
       kfree_kargs(kargs, argc);
       as_destroy(new_as);
-      return ENOMEM;
+      *errp = ENOMEM;
+      return -1;
     }
 
     /* Move to new address space */
@@ -422,7 +447,8 @@ sys_execv(userptr_t program, userptr_t * args) {
         proc_setas(old_as);
         as_activate();
         as_destroy(new_as);
-        return result;
+        *errp = EIO;
+        return -1;
       }
 
       kfree(kargs[i]);
@@ -448,7 +474,8 @@ sys_execv(userptr_t program, userptr_t * args) {
         proc_setas(old_as);
         as_activate();
         as_destroy(new_as);
-        return result;
+        *errp = EIO;
+        return -1;
       }
     }
 
@@ -475,7 +502,8 @@ sys_execv(userptr_t program, userptr_t * args) {
 
 	/* enter_new_process does not return. */
 	panic("enter_new_process returned\n");
-	return EINVAL;
+	*errp = EINVAL;
+  return -1;
 
   #endif
   return 0;

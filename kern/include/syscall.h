@@ -72,11 +72,11 @@ int sys_read(int fd, userptr_t buf_ptr, size_t size, int *errp);
 off_t sys_lseek(int fd, off_t offset, int whence, int *errp);
 int sys_dup2(int oldfd, int newfd, int *errp);
 void sys__exit(int status);
-int sys_waitpid(pid_t pid, userptr_t statusp, int options);
+int sys_waitpid(pid_t pid, userptr_t statusp, int options, int *errp);
 pid_t sys_getpid(void);
 pid_t sys_getppid(void);
-int sys_fork(struct trapframe *ctf, pid_t *retval);
-int sys_execv(userptr_t program, userptr_t *args);
+pid_t sys_fork(struct trapframe *ctf, int *errp);
+int sys_execv(userptr_t program, userptr_t *args, int *errp);
 int sys_getcwd(userptr_t buf_ptr, size_t size, int *errp);
 int sys_chdir(const char *path, int *errp);
 #endif

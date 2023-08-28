@@ -127,6 +127,7 @@ common_prog(int nargs, char **args)
 {
 	struct proc *proc;
 	int result;
+	int err;
 
 	/* Create a process for the new program to run in. */
 	proc = proc_create_runprogram(args[0] /* name */);
@@ -144,7 +145,7 @@ common_prog(int nargs, char **args)
 		return result;
 	}
 
-	sys_waitpid(proc->p_pid, NULL, 0);
+	result = sys_waitpid(proc->p_pid, NULL, 0, &err);
 
 	/*
 	 * The new process will be destroyed when the program exits...
