@@ -74,9 +74,14 @@ struct proc {
 
 #if OPT_SYSCALLS
 	int p_status;                   /* status as obtained by exit() */
+	int p_exited;
+	int exited_children;
+
 	pid_t p_pid;
 	pid_t pp_pid;
+
 	struct semaphore *p_sem;
+	struct semaphore *waiting_sem;
 	struct openfile *fileTable[OPEN_MAX];
 #endif
 };
@@ -113,5 +118,7 @@ struct proc *proc_search_pid(pid_t pid);
 void proc_signal_end(struct proc *proc);
 
 void proc_file_table_copy(struct proc *psrc, struct proc *pdest);
+
+int proc_count_children(pid_t pid);
 
 #endif /* _PROC_H_ */

@@ -27,29 +27,42 @@
  * SUCH DAMAGE.
  */
 
-/*
- * Simple program to add two numbers (given in as arguments). Used to
- * test argument passing to child processePs.
- *
- * Intended for the basic system calls assignment; this should work
- * once execv() argument handling is implemented.
- */
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 #include <err.h>
-#include <kern/seek.h>
+#include <string.h>
+#include <kern/wait.h>
 
 int
-main(int argc, char *argv[])
+main(void)
 {	
-	printf("argc: %d\n", argc);
-	printf("argv: %x\n", (int)argv);
+	printf("**************waitpid-nohang**************\n");
 
-	char * add = (char *)0x7ffffffc;
-	printf("%s\n", add);
-	printf("argv[0]: %s\n", argv[0]);
+	printf("\n\n fork, parent will call waitpid on child with NOHANG option\n\n");
+
+	__pid_t c_pid = fork();
+	int ret, stat;
+
+	if(c_pid){
+		/* Parent process */
+		ret = waitpid(-1, &stat, WNOHANG);
+		if(ret == 0){
+			printf("Waitpid returned\n");
+		}else{
+			printf("Waitpid returned with error\n");
+		}
+	}else{
+		/* Child process */
+		char *args[2];
+		char arg0[10];
+		args[0] = arg0;
+		args[1] = NULL;
+		strcpy(args[0], "palin");
+		ret = execv("testbin/palin", args);
+
+		printf("Execv returned, big error --> %d\n", ret);
+	}
 	return 0;
 }

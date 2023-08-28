@@ -337,7 +337,6 @@ defoption syscalls
 optfile syscalls syscall/file_syscalls.c
 optfile syscalls syscall/proc_syscalls.c
 
-# file ../userland/testbin/mytest/mytest.c
 
 defoption hangman
 optfile   hangman thread/hangman.c

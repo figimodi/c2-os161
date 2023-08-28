@@ -27,58 +27,43 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _SYSCALL_H_
-#define _SYSCALL_H_
-
-
-#include <cdefs.h> /* for __DEAD */
-#include "opt-syscalls.h"
-
-struct trapframe; /* from <machine/trapframe.h> */
-
 /*
- * The system call dispatcher.
- 
+ * Simple program to add two numbers (given in as arguments). Used to
+ * test argument passing to child processes.
+ *
+ * Intended for the basic system calls assignment; this should work
+ * once execv() argument handling is implemented.
  */
 
-void syscall(struct trapframe *tf);
+#include <sys/types.h>
+#include <kern/wait.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <errno.h>
+#include <err.h>
 
-/*
- * Support functions.
- */
+int
+main(void)
+{
+	pid_t pid;
+	int rv, error;
 
-/* Helper for fork(). You write this. */
-void enter_forked_process(struct trapframe *tf);
+	pid = fork();
 
-/* Enter user mode. Does not return. */
-__DEAD void enter_new_process(int argc, userptr_t argv, userptr_t env,
-		       vaddr_t stackptr, vaddr_t entrypoint);
-
-
-/*
- * Prototypes for IN-KERNEL entry points for system call implementations.
- */
-
-int sys_reboot(int code);
-int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
-
-#if OPT_SYSCALLS
-struct openfile;
-void openfileIncrRefCount(struct openfile *of);
-int sys_open(userptr_t path, int openflags, mode_t mode, int *errp);
-int sys_close(int fd, int *errp);
-int sys_write(int fd, userptr_t buf_ptr, size_t size, int *errp);
-int sys_read(int fd, userptr_t buf_ptr, size_t size, int *errp);
-off_t sys_lseek(int fd, off_t offset, int whence, int *errp);
-int sys_dup2(int oldfd, int newfd, int *errp);
-void sys__exit(int status);
-int sys_waitpid(pid_t pid, userptr_t statusp, int options);
-pid_t sys_getpid(void);
-pid_t sys_getppid(void);
-int sys_fork(struct trapframe *ctf, pid_t *retval);
-int sys_execv(userptr_t program, userptr_t *args);
-int sys_getcwd(userptr_t buf_ptr, size_t size, int *retval);
-int sys_chdir(const char *path);
-#endif
-
-#endif /* _SYSCALL_H_ */
+	if(pid){
+		//parent process
+		// will wait for the child with option noHANG
+		rv = waitpid(pid, &error, WNOHANG);
+		(void)rv;
+		for(int i = 0; i<10; i++){
+			printf("b");
+		}
+		
+	}else{
+		for(int i = 0; i<1000; i++){
+			printf("a");
+		}
+	}
+	return 0;
+}

@@ -12,7 +12,7 @@ SUBDIRS=add argtest badcall bigexec bigfile bigfork bigseek bloat conman \
 	randcall redirect rmdirtest rmtest \
 	sbrktest schedpong sort sparsefile tail tictac triplehuge \
 	triplemat triplesort usemtest zero \
-	mytest fork-exec
+	fork-exec wptest waitpid-nohang
 
 # But not:
 #    userthreads    (no support in kernel API in base system)
