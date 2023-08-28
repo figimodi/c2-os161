@@ -17,4 +17,6 @@ $(MYBUILDDIR)/mytest.o: \
  $(INSTALLTOP)/include/kern/time.h \
  $(INSTALLTOP)/include/kern/unistd.h \
  $(INSTALLTOP)/include/kern/wait.h \
- $(INSTALLTOP)/include/err.h
+ $(INSTALLTOP)/include/err.h \
+ $(INSTALLTOP)/include/errno.h \
+ $(INSTALLTOP)/include/kern/errno.h

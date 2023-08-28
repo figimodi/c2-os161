@@ -1,4 +1,93 @@
 # PROC HANDLING SYSCALLS
+
+## getcwd
+```c
+int
+sys_getcwd(userptr_t buf_ptr, size_t size, int *retval) {
+
+    if(buf_ptr==NULL)
+      return EFAULT;
+
+    if(size == 0 && buf_ptr!=NULL)
+     return EINVAL;
+
+    struct iovec iov;
+    struct uio u;
+    int result;
+
+    iov.iov_ubase = buf_ptr;
+    iov.iov_len = size;
+
+    u.uio_iov = &iov;
+    u.uio_iovcnt = 1;
+    u.uio_resid = size;          // amount to read from the file
+    u.uio_offset = 0;
+    u.uio_segflg =UIO_USERISPACE;
+    u.uio_rw = UIO_READ;
+    u.uio_space = curproc->p_addrspace;
+
+    result = vfs_getcwd(&u);
+    if (result) {
+      return result;
+    }
+
+    int l = size - u.uio_resid;
+
+    if(l<(int)strlen((char *)buf_ptr)) {
+      return ERANGE;
+    }
+    
+    *retval = l;
+
+    return result;
+}
+
+```
+```getcwd``` allows to store the path to the current working directory as a string.
+We first run some initial checks on the passed parameters: if there are some anomalies we return the proper error code.
+After that, through ```vfs_getcwd```, we get the current working directory and save it directly in the memory area pointed by the pointer passed as argument. We check the return value in case of any error is returned by this opearation.
+
+## chdir
+```c
+int
+sys_chdir(const char *path) {
+    int result = 0;
+
+    if (path == NULL)
+      return EFAULT;
+
+    if(strlen(path)==0)
+      return ENOENT;
+
+    char * kbuf = kmalloc(strlen(path));
+    if (kbuf==NULL)
+      return ENOMEM;
+
+    result = copyinstr((const_userptr_t)path, kbuf, strlen(path) + 1, NULL);
+    if (result) {
+      kfree(kbuf);
+      return result;
+    }
+
+    struct vnode *v;
+    result = vfs_open((char *)kbuf, O_RDONLY, 0, &v);
+
+    if(result) {
+      kfree(kbuf);
+      return result;
+    }
+
+    result = vfs_chdir(kbuf);
+
+    kfree(kbuf);
+    return result;
+}
+
+```
+```chdir``` allows to change the current working directory to the one passed as argument.
+We first run some initial checks on the passed parameters: if there are some anomalies we return the proper error code (for example NULL path name passed as parameter).
+
+# PROC HANDLING SYSCALLS
 For each of the reported system calls, we will report the code and an brief explanation of the latter. While providing the explenation of the depicted code, we will also analize some design choices.
 
 ## execv
