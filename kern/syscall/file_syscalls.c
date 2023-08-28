@@ -28,6 +28,13 @@
 
 #define USE_KERNEL_BUFFER 0
 
+struct rwlock {
+  int n_read_active; /* integer representing the number of readers currently reading on the file */
+  int write_active; /* boolean */
+  struct lock *mutex; /* the lock used for the condition variable and other critical sections */
+  struct cv *cv; /* condition variable to avoid busy waiting */
+};
+
 /* system open file table */
 struct openfile {
   struct vnode *vn;
@@ -35,7 +42,7 @@ struct openfile {
   unsigned int countRef;
   off_t size;
   uint32_t openflags;
-  struct semaphore *sem;
+  struct rwlock rwlock;
 };
 
 struct openfile systemFileTable[SYSTEM_OPEN_MAX];
@@ -43,9 +50,9 @@ struct openfile systemFileTable[SYSTEM_OPEN_MAX];
 void openfileIncrRefCount(struct openfile *of) {
   if (of!=NULL)
   {
-    P(of->sem);
+    lock_acquire((of->rwlock).mutex);
     of->countRef++;
-    V(of->sem);
+    lock_release((of->rwlock).mutex);
   }
 }
 
@@ -221,7 +228,10 @@ sys_open(userptr_t path, int openflags, mode_t mode, int *errp)
       else
         of->offset = 0;
       of->openflags = openflags;
-      of->sem = sem_create("of_sem", 1);
+      (of->rwlock).mutex = lock_create("file_lock");
+      (of->rwlock).cv = cv_create("file_cv");
+      (of->rwlock).n_read_active = 0;
+      (of->rwlock).write_active = 0;
       break;
     }
   }
@@ -274,6 +284,8 @@ sys_close(int fd, int *errp)
   
   vn = of->vn;
   of->vn = NULL;
+  lock_destroy((of->rwlock).mutex);
+  cv_destroy((of->rwlock).cv);
   if (vn==NULL) return -1;
 
   vfs_close(vn);		
@@ -308,14 +320,23 @@ sys_write(int fd, userptr_t buf_ptr, size_t size, int *errp)
       return -1;
     }
 
-    P(of->sem);
+    lock_acquire((of->rwlock).mutex);
+    while((of->rwlock).n_read_active > 0 || (of->rwlock).write_active == 1)
+      cv_wait((of->rwlock).cv, (of->rwlock).mutex);
+
+    (of->rwlock).write_active = 1;
+    lock_release((of->rwlock).mutex);
+
     /* when O_APPEND is set, before every write the cursor should be moved at the end */
     if (of->openflags & O_APPEND)
       sys_lseek(fd, 0, SEEK_END, &result);
     if (result)
     {
       *errp = ENOSYS;
-      V(of->sem);
+      lock_acquire((of->rwlock).mutex);
+      (of->rwlock).write_active = 0;
+      cv_broadcast((of->rwlock).cv, (of->rwlock).mutex);
+      lock_release((of->rwlock).mutex);
       return -1;
     }
     result = file_write(fd, buf_ptr, size);
@@ -324,10 +345,16 @@ sys_write(int fd, userptr_t buf_ptr, size_t size, int *errp)
       /* set back the original offset (atomic operation in case of O_APPEND)*/
       sys_lseek(fd, recovery_offset, SEEK_SET, &result);
       *errp = ENOSYS;
-      V(of->sem);
+      lock_acquire((of->rwlock).mutex);
+      (of->rwlock).write_active = 0;
+      cv_broadcast((of->rwlock).cv, (of->rwlock).mutex);
+      lock_release((of->rwlock).mutex);
       return -1;
     }
-    V(of->sem);
+    lock_acquire((of->rwlock).mutex);
+    (of->rwlock).write_active = 0;
+    cv_broadcast((of->rwlock).cv, (of->rwlock).mutex);
+    lock_release((of->rwlock).mutex);
     return result;
   }
 
@@ -349,22 +376,37 @@ sys_read(int fd, userptr_t buf_ptr, size_t size, int *errp)
   int result;
   int file_mode;
   char *p = (char *)buf_ptr;
+  struct openfile *of;
 
   if (size == 0)
     return 0;
 
   if (fd!=STDIN_FILENO)
   {
-    file_mode = (curproc->fileTable[fd])->openflags & O_ACCMODE;
+    of = curproc->fileTable[fd];
+    file_mode = of->openflags & O_ACCMODE;
 
     if (file_mode == O_WRONLY)
     {
       *errp = EBADF;
       return -1;
     }
-    P((curproc->fileTable[fd])->sem);
+    
+    lock_acquire((of->rwlock).mutex);
+    while((of->rwlock).write_active == 1)
+      cv_wait((of->rwlock).cv, (of->rwlock).mutex);
+
+    (of->rwlock).n_read_active++;
+    lock_release((curproc->fileTable[fd]->rwlock).mutex);
+
     result = file_read(fd, buf_ptr, size);
-    V((curproc->fileTable[fd])->sem);
+
+    lock_acquire((of->rwlock).mutex);
+    (of->rwlock).n_read_active--;
+    if ((of->rwlock).n_read_active == 0)
+      cv_broadcast((of->rwlock).cv, (of->rwlock).mutex);
+    lock_release((curproc->fileTable[fd]->rwlock).mutex);
+   
     return result;
   }
 
