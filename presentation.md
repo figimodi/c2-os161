@@ -36,7 +36,10 @@ struct proc {
   struct openfilefileTable[OPEN_MAX];
 };
 ```
-**Giuse spiega cosa sono p_pid, pp_pid, p_status, p_exited, exited_children**.
+The ```p_pid``` filed stores the pid of the process, while the ```pp_pid``` stores the pid of the parent process (if the current process was created through a fork call, otherwise is set to 0). 
+
+The ```p_status``` field simply stores the status passed as parameter to the exit syscall. This status will then be obtained by processes waiting on the current one. The ```p_exited``` is a simple flag, used to distinguish active process from exited processes to be waited on. The counter ```exited_children``` is instead a variable that holds the number of exited children, that can be waited on.
+
 An important field of this structure is the ```openFileTable```, which contains the ```openfile``` instances used by the process itself. Each one of these instances is stored at cell number corresponding to the relative file descriptor that describes the file. Each entry is also a pointer to the effective data structure that it is instead part of a bigger table called ```systemFileTable```, that is visible to all processes.
 The ```struct openfile``` is defined as follow:
 ```c
@@ -67,10 +70,10 @@ All the code was also reviewd by all the members before merging it into a final 
 
 We now would like to discuss about some problems that we encountered along our code developing phase:
 
-- While testing on the shell we noticed that only part of the inputs was received by the process running the shell, thus making impossible to issue correctly the commands. This was due to the fact that the menu process was still running at the same time 'stealing' some input characters. The solution we came up with is to make the menu process wait with ```waitpid``` (thus stopping the execution momentarily) until the shell was done.
+- While testing on the shell we noticed that only part of the inputs was received by the process running the shell, thus making impossible the issue of correct commands. This was due to the fact that the menu process was still running concurrently, 'stealing' some input characters. The solution we came up with is to make the menu process wait with ```waitpid``` (thus stopping the execution momentarily) until the shell is done.
 - For further testing we also tried to run tests in ```testbin``` folder, but unfortunately most of them required argument passing, which is not implemented by default in os161. We left this undone since we developed our own tests that were able to fully test our systemcalls.<br>
 In order to create a custom test we created a folder inside testbin by taking a cue from an already existing one. We then proceeded to issue the following commands: ```bmake depend, bmake, bmake install```. The new tests are then runnable by issuing ```p testbin/[test-folder-name]```.
-- While developing getwcd, we noticed that after changing current working directory with chdir, getwcd wouldn't give us the right feedback. Our implementation of getcwd rely on ```vfs_getcwd``` which consists in two steps: the first is getting the volume name (which works all the time) and the second is getting the path of the folder through ```VOP_NAMEFILE```, of which we report the code here:
+- While developing getcwd, we noticed that after changing current working directory with chdir, getcwd wouldn't give us the right feedback. Our implementation of getcwd relies on ```vfs_getcwd``` which consists in two steps: the first is getting the volume name (which works all the time) and the second is getting the path of the folder through ```VOP_NAMEFILE```, of which we report the code here:
 ```c
 /*
 VOP_NAMEFILE
@@ -203,43 +206,47 @@ We first run some initial checks on the passed parameters: if there are some ano
 ## execv
 ```c
 int 
-sys_execv(userptr_t program, userptr_t * args) {
+sys_execv(userptr_t program, userptr_t * args, int *errp) {
+  struct addrspace *new_as;
+  struct addrspace *old_as;
 
-    struct addrspace *new_as;
-    struct addrspace *old_as;
+	struct vnode *v;
 
-    struct vnode *v;
-  
 	vaddr_t entrypoint, stackptr;
     
-    int i = 0, result, length, tail, arg_length = 0, argc = 0;
+  int result, length, tail, arg_length = 0, i = 0, argc = 0;
 
-    int * stackargs;
-    volatile userptr_t currptr;
+  volatile userptr_t currptr;
+  //userptr_t argv = NULL;
 
+  int * stackargs;
+  
 	KASSERT(proc_getas() != NULL);
     
-    /* Copying the file path into kernel memory */
-    char * progname = kmalloc(PATH_MAX);
-    size_t actual;
-    result = copyinstr((const_userptr_t) program, progname, PATH_MAX, &actual);
-    if(result) {
-        /* Error handling not reported, check the code */
-    }
+  char * progname = kmalloc(PATH_MAX);
+  size_t actual;
+  result = copyinstr((const_userptr_t) program, progname, PATH_MAX, &actual);
+  if(result) {
+      kfree(progname);
+      *errp = EIO;
+      return -1;
+  }
     
 	/* Open the file. */
 	result = vfs_open(progname, O_RDONLY, 0, &v);
-    kfree(progname);
-    if (result) {
-        return EACCES;
-    }
+  kfree(progname);
 
-	/* Create a completely new address space */
+	if (result) {
+		*errp = EACCES;
+    return -1;
+	}
 
+	/* Create a new address space. Not a copy of the old one but a completely new as*/
 	new_as = as_create();
 	if (new_as == NULL) {
 		vfs_close(v);
-		return ENOMEM;
+		*errp = ENOMEM;
+    return -1;
 	}
 
 	/* Switch to it and activate it. */
@@ -250,7 +257,14 @@ sys_execv(userptr_t program, userptr_t * args) {
 	result = load_elf(v, &entrypoint);
 	if (result) {
 		vfs_close(v);
-		return EACCES;
+    /* Go back to initial addres space and destroy new one */
+    as_deactivate();
+    proc_setas(old_as);
+    as_activate();
+    as_destroy(new_as);
+		
+    *errp = EACCES;
+    return -1;
 	}
 
 	/* Done with the file now. */
@@ -259,138 +273,166 @@ sys_execv(userptr_t program, userptr_t * args) {
 	/* Define the user stack in the address space */
 	result = as_define_stack(new_as, &stackptr);
 	if (result) {
-		return result;
+    /* Go back to initial addres space and destroy new one */
+    as_deactivate();
+    proc_setas(old_as);
+    as_activate();
+    as_destroy(new_as);
+		
+    *errp = ENOMEM;
+    return -1;
 	}
+
+ /* Both entry point and stack are now set for the new address space */
     
-    if(args != NULL) {
-        
-        /* Go back to previous address space to get parameters */
+  if(args != NULL) {
+    /*
+      We now need to get all the arguments that were passed in
+      the previous address space and store them in the new address space
+    */
+
+    as_deactivate();
+    proc_setas(old_as);
+    as_activate();
+
+    /* Counting args */
+    for(i=0; args[i]!=NULL; i++, argc++){
+      arg_length += strlen((char*)args[i]);
+    }
+
+    /* Check max size */
+    if(arg_length > ARG_MAX){
+      kprintf("Argments are too big. Max total size is %d\n", ARG_MAX);
+      *errp = E2BIG;
+      return -1;
+    }
+
+    /* Save args in kernel buffers */
+    char ** kargs =kmalloc(argc * sizeof(char *));
+
+    if(kargs == NULL){
+      as_destroy(new_as);
+      *errp = ENOMEM;
+      return -1;
+    }
+
+    for(i=0; i<argc; i++){
+      kargs[i] = kmalloc(128);
+      if (kargs[i] == NULL){
+        kprintf("Couldn't allocate memory in kernel for argument passing\n");
+        kfree_kargs(kargs, i-1);
+        as_destroy(new_as);
+        *errp = ENOMEM;
+        return -1;
+      }
+    }
+
+    /* Save into kargs[i] the user argument args[i] */
+
+    for(i=0; i<argc; i++){
+      /* Hope we fit */
+      result = copyinstr((userptr_t)args[i], kargs[i], 128, &actual);
+      if(result){
+        kprintf("Copy argument from user to kernel did not work. Aborting\n");
+        kfree_kargs(kargs, argc);
+        as_destroy(new_as);
+        *errp = EIO;
+        return -1;
+      }
+    }
+
+    stackargs = (int*)kmalloc((argc+1) * sizeof(int *));
+
+    if(stackargs == NULL){
+      kprintf("Couldnt allocate memory in kernel to save new addresses. Aborting\n");
+      kfree_kargs(kargs, argc);
+      as_destroy(new_as);
+      *errp = ENOMEM;
+      return -1;
+    }
+
+    /* Move to new address space */
+    as_deactivate();
+    proc_setas(new_as);
+    as_activate();
+  
+    /* Copying all arguments in userspace starting from address stackptr */
+    currptr = (userptr_t)stackptr;
+    for (i = 0; i < argc ; i++){
+      
+      /* Consider space for string termination */
+      length = strlen(kargs[i]) + 1;
+
+      /* Check allignment in the stack */
+      currptr -= length;
+      tail = 0;
+
+      if((int)currptr & 0x3){
+        tail = (int)currptr & 0x3;
+        currptr -= tail;
+      }
+
+      /* Copy from kernel to user memory */
+      result = copyout(kargs[i], (userptr_t)currptr, length);
+
+      if (result) {
+        kprintf("Couldnt copy argv[%d] from kernel to new user space\n", i);
+        kfree_kargs(kargs, argc);
+        kfree(stackargs);
         as_deactivate();
         proc_setas(old_as);
         as_activate();
+        as_destroy(new_as);
+        *errp = EIO;
+        return -1;
+      }
 
-        /* Find args size and total length */
-        for(i=0; args[i]!=NULL; i++, argc++){
-        arg_length += strlen((char*)args[i]);
-        }
+      kfree(kargs[i]);
 
-        if(arg_length > ARG_MAX){
-        kprintf("Argments are too big. Max total size is %d\n", ARG_MAX);
-        return E2BIG;
-        }
-
-
-        /*
-        Need to save each argument into a kernel buffer so that we can then later move them into a new userptr
-        */
-
-        char ** kargs =kmalloc(argc * sizeof(char *));
-
-        if(kargs == NULL){
-        return ENOMEM;
-        }
-
-        for(i=0; i<argc; i++){
-        kargs[i] = kmalloc(128);
-        if (kargs[i] == NULL){
-            /* Error handling not reported, check the code */
-        }
-        }
-
-        for(i=0; i<argc; i++){
-        /* Save into kargs[i] the all the arguments*/
-        /* Hope we fit */
-        result = copyinstr((userptr_t)args[i], kargs[i], 128, &actual);
-        if(result){
-            /* Error handling not reported, check the code */
-        }
-        }
-
-        stackargs = (int*)kmalloc((argc+1) * sizeof(int *));
-
-        if(stackargs == NULL){
-            /* Error handling not reported, check the code */
-        }
-
-        
-        as_deactivate();
-        proc_setas(new_as);
-        as_activate();
-
-        // now I need to copy all these parameters in the new address space.
-
-        // starting from the new stackptr
-        currptr = (userptr_t)stackptr;
-        for (i = 0; i < argc ; i++){
-            // need to copy in the stack kargs[i];
-            // length must be incremented by one to consider the string termination character;
-            length = strlen(kargs[i]) + 1;
-
-            // need to make sure that we are still alligned in the stack
-            currptr -= length;
-            tail = 0;
-
-            if((int)currptr & 0x3){
-                // not alligned!
-                tail = (int)currptr & 0x3;
-
-                // will now subtract the tail to be at the beginning of the word
-                currptr -= tail;
-            }
-
-            // need to copy from kernel memory to user memory
-            result = copyout(kargs[i], (userptr_t)currptr, length);
-
-            if (result) {
-                /* Error handling not reported, check the code */
-            }
-
-            kfree(kargs[i]);
-
-            stackargs[i] = (int)currptr;
-            }
-
-        kfree(kargs);
-
-        // last arguments must be null pointer
-        stackargs[i] = 0;
-
-        // need to save in memory also the pointers to the arguments in user memory;
-
-        for (i=argc; i>=0; i--){
-            currptr -= sizeof(char *);
-            result = copyout(stackargs + i, currptr, sizeof(char*));
-
-            if(result){
-                /* Error handling not reported, check the code */
-                }
-            }
-
-        kfree(stackargs);
-
-        as_destroy(old_as);
-
-        enter_new_process(argc, (userptr_t)currptr,
-                NULL /*userspace addr of environment*/,
-                (vaddr_t)currptr, entrypoint);
-    }else{
-        // no arguments were passed!
-        as_deactivate();
-        proc_setas(new_as);
-        as_activate();
-        as_destroy(old_as);
-
-        /* Warp to user mode. */
-        enter_new_process(0, NULL,
-                NULL /*userspace addr of environment*/,
-                stackptr, entrypoint);
+      /* Store the address in userspace of the current arg */
+      stackargs[i] = (int)currptr;
     }
 
-	/* enter_new_process does not return. */
-	panic("enter_new_process returned\n");
-	return EINVAL;
+    kfree(kargs);
 
-  return 0;
+    /* Last arg must be null pointer */
+    stackargs[i] = 0;
+
+    /* Save in memory the new argv (pointers to arguments) */
+    for (i=argc; i>=0; i--){
+      currptr -= sizeof(char *);
+      result = copyout(stackargs + i, currptr, sizeof(char*));
+
+      if(result){
+        kprintf("Sorry, couldnt copy address of parameter from kernel to userspace\n");
+        kfree(stackargs);
+        as_deactivate();
+        proc_setas(old_as);
+        as_activate();
+        as_destroy(new_as);
+        *errp = EIO;
+        return -1;
+      }
+    }
+
+    kfree(stackargs);
+
+    enter_new_process(argc, (userptr_t)currptr,
+			  NULL /*userspace addr of environment*/,
+			  (vaddr_t)currptr, entrypoint);
+  }else{
+
+    /* No arguments were passed */
+    as_deactivate();
+    proc_setas(new_as);
+    as_activate();
+    as_destroy(old_as);
+
+    /* Warp to user mode. */
+    enter_new_process(0, NULL,
+          NULL /*userspace addr of environment*/,
+          stackptr, entrypoint);
+  }
 }
 
 ```
@@ -398,101 +440,114 @@ The goal of the execv system call is the substitution of the running program, wi
 
 ## fork
 ```c
-    struct trapframe *tf_child;
-    struct proc *newp;
-    int result;
+pid_t sys_fork(struct trapframe *ctf, int *errp) {
 
-    KASSERT(curproc != NULL);
+  struct trapframe *tf_child;
+  struct proc *newp;
+  int result;
 
-    newp = proc_create_runprogram(curproc->p_name);
-    if (newp == NULL) {
-        return ENOMEM;
-    }
+  KASSERT(curproc != NULL);
 
-    /* done here as we need to duplicate the address space 
-        of thbe current process */
-    as_copy(curproc->p_addrspace, &(newp->p_addrspace));
-    if(newp->p_addrspace == NULL){
-        proc_destroy(newp); 
-        return ENOMEM; 
-    }
+  newp = proc_create_runprogram(curproc->p_name);
+  if (newp == NULL) {
+    *errp = ENOMEM;
+    return -1;
+  }
 
-    /* we need a copy of the parent's trapframe */
-    tf_child = kmalloc(sizeof(struct trapframe));
-    if(tf_child == NULL){
-        proc_destroy(newp);
-        return ENOMEM; 
-    }
-    memcpy(tf_child, ctf, sizeof(struct trapframe));
+  /* done here as we need to duplicate the address space 
+     of the current process */
+  as_copy(curproc->p_addrspace, &(newp->p_addrspace));
+  if(newp->p_addrspace == NULL){
+    proc_destroy(newp); 
+    *errp = ENOMEM;
+    return -1;
+  }
 
-    // link child to parent process
-    newp->pp_pid = curproc->p_pid;
+  /* we need a copy of the parent's trapframe */
+  tf_child = kmalloc(sizeof(struct trapframe));
+  if(tf_child == NULL){
+    proc_destroy(newp);
+    *errp = ENOMEM;
+    return -1;
+  }
+  memcpy(tf_child, ctf, sizeof(struct trapframe));
 
-    result = thread_fork(
-            curthread->t_name, newp,
-            call_enter_forked_process, 
-            (void *)tf_child, (unsigned long)0/*unused*/);
+  /* Link child to parent process */
+  newp->pp_pid = curproc->p_pid;
 
-    if (result){
-        proc_destroy(newp);
-        kfree(tf_child);
-        return ENOMEM;
-    }
+  result = thread_fork(
+		 curthread->t_name, newp,
+		 call_enter_forked_process, 
+		 (void *)tf_child, (unsigned long)0/*unused*/);
 
-    *retval = newp->p_pid;
-    
-    return 0;
+  if (result){
+    proc_destroy(newp);
+    kfree(tf_child);
+    *errp = ENOMEM;
+    return -1;
+  }
+
+  return newp->p_pid;  
+}
 ```
 
 The implementation of the fork syscall is left more or less the same of the one provided in the labs, except for the addition of parent and child process linking. After creating the new process, the parent pid is saved in the the ```pp_pid``` variable stored in the proc struct. This linking will be useful when calling waitpid or exit. 
 
 ## waitpid
 ```c
-struct proc *p;
+int
+sys_waitpid(pid_t pid, userptr_t statusp, int options, int *errp)
+{
+  struct proc *p;
   int s;
   pid_t c_pid;
   
-  // only option allowed is WNOHANG
+  /* Only option allowed is WNOHANG */
   if((options & !WNOHANG) != 0){
     // other options were passed! must abort
     if (statusp!=NULL) 
-          *(int*)statusp = EINVAL;
+      *(int*)statusp = EINVAL;
+      *errp = EINVAL;
       return -1;
   }
 
+  /* Can only wait for specific pid or for any child */
   if(pid < -1 || pid == 0){
-    kprintf("waiting on groups not implemeted yet!");
+    kprintf("Waiting on groups not implemeted yet!");
     if (statusp!=NULL) 
-          *(int*)statusp = EINVAL;
+      *(int*)statusp = EINVAL;
+      *errp = EINVAL;
       return -1;
 
   }else if(pid == -1){
-    // need to wait for any child process
-    // to do this we will add a semaphore initialized to 0 so that the process will wait
-    // any child process that will terminate will then post the the semaphore so that the parent will wake
-    // when the parent process wakes it will go through all of it's children to check if they are terminated
-    // and will see their return values.
+    /* Waiting for any child process */
 
+    /* Return error if the calling process does not have any child */
     if(proc_count_children(curproc->p_pid) ==  0){
       if (statusp!=NULL) 
-          *(int*)statusp = ECHILD;
+        *(int*)statusp = ECHILD;
+        *errp = ECHILD;
       return -1;
     }
+
     if(options & WNOHANG){
-      // need to check if any child has finished
+      /* Will simply check the counter in the process struct*/
       if(curproc->exited_children == 0){
         return 0;
       }
     }
 
+    /* This call wont block because at least a child has exited */
     P(curproc->waiting_sem);
-    // need to find any child process and get the termination;
+
+    /* Detect which child pid has exited */
     for(int j=1; j<PID_MAX; j++){
       p = proc_search_pid(j);
       if(p->pp_pid == curproc->p_pid && p->p_exited == 1){
-        // found the child process
+        /* Child found */
         c_pid = p->p_pid;
 
+        /* Call proc_wait on the child so that it will be destroied */
         s = proc_wait(p);
         if (statusp!=NULL) 
           *(int*)statusp = s;
@@ -505,15 +560,27 @@ struct proc *p;
         return c_pid;
       }
     }
-    // if i get here i couldnt find the child process that terminated.
+    
+    /* I couldnt find the child that terminated so will return error */
+    if (statusp!=NULL) 
+      *(int*)statusp = ECHILD;
+
+    *errp = ECHILD;
     return -1;
+
   }else{
-    // need to wait for a specific process
+    
+    /* Waiting on a specific process */
     p = proc_search_pid(pid);
     int s;
-    (void)options; /* not handled */
-    if (p==NULL) return -1;
 
+    if (p==NULL)
+    {
+      *errp = ECHILD;
+      return -1;
+    }
+
+    /* If option is WNOHANG and p has not yet exited */
     if((options & WNOHANG) && p->p_exited == 0){
       return 0;
     }
@@ -523,36 +590,13 @@ struct proc *p;
       *(int*)statusp = s;
     return pid;
   }
+}
 ```
 
 Our choices for the waitpid were to only allow as an option ```WNOHANG``` and as pid either -1 (waiting for any child) or > 1 (waiting for a specific process). After checking that out constraints were met, the system call goes along in conditional execution depending on the value of pid.
 
-To help the support of waiting for any child, some additions were made to out data structures. Following reported is the process struct.
-```c
-struct proc {
-	char *p_name;			/* Name of this process */
-	struct spinlock p_lock;		/* Lock for this structure */
-	unsigned p_numthreads;		/* Number of threads in this process */
+To help the support of waiting for any child, all the addition to the proc structure mentioned before will result very helpful.
 
-	/* VM */
-	struct addrspace *p_addrspace;	/* virtual address space */
-
-	/* VFS */
-	struct vnode *p_cwd;		/* current working directory */
-
-	int p_status;                   /* status as obtained by exit() */
-	int p_exited;
-	int exited_children;
-
-	pid_t p_pid;
-	pid_t pp_pid;
-
-	struct semaphore *p_sem;
-	struct semaphore *waiting_sem;
-	struct openfile *fileTable[OPEN_MAX];
-
-}
-```
 
 Each process has a flag ```p_exited``` which is set to one when exit is called by the process and a counter ```exited_children``` that is incremented every time a child process terminates. A new semaphore, ```waiting_sem```, was also added; every time a process must wait for one of his children, it will wait on this semaphore.
 
