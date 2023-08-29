@@ -1,4 +1,117 @@
-# PROC HANDLING SYSCALLS
+# Report progetto c2 - Hidri, Greco, Orlando 
+
+- [Problem Definition](#problem-definition)
+- [Design](#design)
+- [Workload Division](#workload-split)
+- [Issues](#problems)
+- [Syscalls Implementation](#syscalls-implementation)
+- [Testing on Shell](#testing-on-shell)
+
+# Problem Definition
+The project aims to design the main systemcalls that allow the user to run multiple processes, leveraging ```execv``` and  ```dup2```, which are the core of multiprocessing. The solution also includes systemcalls regarding the filesystem, such as: ```open, read, write, lseek, close```. For the sake of processes management we also have to implement: ```gepid, waitpid, _exit, getcwd, chdir```. 
+
+# Design
+We'd like to start by describing what data structures we use to store processes information and how these are used by os161.
+All the processes info are stored into a system table called ```_processTable```, which is implemented as a ciruclar array. The entries of the process table are pointers to a ```struct proc```, which is defined as follows:
+
+```c
+struct proc {
+  char *p_name;
+  struct spinlock p_lock;
+  unsigned p_numthreads;
+
+  struct addrspace *p_addrspace;
+
+  struct v_node *p_cwd;
+
+  int p_status;
+  int p_exited;
+  int exited_children;
+
+  pid_t p_pid;
+  pid_t pp_pid;
+
+  struct semaphore *sem;
+  struct semaphore waiting_sem;
+  struct openfilefileTable[OPEN_MAX];
+};
+```
+**Giuse spiega cosa sono p_pid, pp_pid, p_status, p_exited, exited_children**.
+An important field of this structure is the ```openFileTable```, which contains the ```openfile``` instances used by the process itself. Each one of these instances is stored at cell number corresponding to the relative file descriptor that describes the file. Each entry is also a pointer to the effective data structure that it is instead part of a bigger table called ```systemFileTable```, that is visible to all processes.
+The ```struct openfile``` is defined as follow:
+```c
+struct openfile {
+  struct vnode *vn;
+  off_t offset;
+  unsigned int countRef;
+  off_t size;
+  uint32_t openflags;
+  struct rwlock rwlock;
+};
+```
+Our implementation consists of the last three fields:
+- ```size``` is used into the lseek systemcall since when appending at the end of the file is usefull to have the size of the file already in the data structure.
+- ```openflags``` stores all the flags passed when calling open, that are usefull to know: read-write permissions, append/create/trunk flags, ecc...
+- ```rwlock``` is responsible to lock mutually the writers and the readers. We allow multiple readers but only one writer at time can hold the lock. 
+
+# Workload Division
+The following list describes how the workload was splitted evenly among all the members of the group:
+- Stiven Hidri: ```getcwd```, ```chdir```, ```dup2```, ```close```
+- Filippo Greco: ```open```, ```read```, ```write```, ```lseek```
+- Giuseppe Orlando: ```fork```, ```execv```, ```waitpid```, ```_exit```, ```getpid```
+
+We often discussed how to develop solutions of personal systemcalls all togheter, with a special attention to the most demanding ones, such us ```execv```.
+All the code was also reviewd by all the members before merging it into a final and stable version of os161.
+
+# Issues
+
+We now would like to discuss about some problems that we encountered along our code developing phase:
+
+- While testing on the shell we noticed that only part of the inputs was received by the process running the shell, thus making impossible to issue correctly the commands. This was due to the fact that the menu process was still running at the same time 'stealing' some input characters. The solution we came up with is to make the menu process wait with ```waitpid``` (thus stopping the execution momentarily) until the shell was done.
+- For further testing we also tried to run tests in ```testbin``` folder, but unfortunately most of them required argument passing, which is not implemented by default in os161. We left this undone since we developed our own tests that were able to fully test our systemcalls.<br>
+In order to create a custom test we created a folder inside testbin by taking a cue from an already existing one. We then proceeded to issue the following commands: ```bmake depend, bmake, bmake install```. The new tests are then runnable by issuing ```p testbin/[test-folder-name]```.
+- While developing getwcd, we noticed that after changing current working directory with chdir, getwcd wouldn't give us the right feedback. Our implementation of getcwd rely on ```vfs_getcwd``` which consists in two steps: the first is getting the volume name (which works all the time) and the second is getting the path of the folder through ```VOP_NAMEFILE```, of which we report the code here:
+```c
+/*
+VOP_NAMEFILE
+*/
+static
+int
+emufs_namefile(struct vnode v, struct uio)
+{
+    struct emufs_vnode ev = v->vn_data;
+    struct emufs_fsef = v->vn_fs->fs_data;
+
+    if (ev == ef->ef_root) {
+        /*
+        Root directory - name is empty string
+        */
+        return 0;
+    }
+
+    (void)uio;
+
+    return ENOSYS;
+}
+```
+It seems that the implementation of this function only applies when the current working directory is the root of our file system. As soon as we move out from the root the function will return ```ENOSYS```, thus raising an error and not retreiving the folder's path. We tried to find a solution but due to the lack of material about this particular topic we failed to complete these implementation.
+
+
+# Syscalls Implementation
+For each of the reported system calls, we will report the code and an brief explanation of the latter. While providing the explenation of the depicted code, we will also analize some design choices:
+- [open](#open)
+- [read](#read)
+- [write](#write)
+- [lseek](#lseek)
+- [close](#close)
+- [dup2](#dup2)
+- [chdir](#chdir)
+- [getcwd](#getcwd)
+- [getpid](#getpid)
+- [fork](#fork)
+- [execv](#execv)
+- [waitpid](#waitpid)
+- [_exit](#exit)
 
 ## getcwd
 ```c
@@ -86,9 +199,6 @@ sys_chdir(const char *path) {
 ```
 ```chdir``` allows to change the current working directory to the one passed as argument.
 We first run some initial checks on the passed parameters: if there are some anomalies we return the proper error code (for example NULL path name passed as parameter).
-
-# PROC HANDLING SYSCALLS
-For each of the reported system calls, we will report the code and an brief explanation of the latter. While providing the explenation of the depicted code, we will also analize some design choices.
 
 ## execv
 ```c
@@ -667,7 +777,7 @@ sys_write(int fd, userptr_t buf_ptr, size_t size, int *errp)
 ```
 The write system call has been changed from the previous implementation by adding the following features:
 - Check of the mode before writing (OnlyRead, OnlyWrite, ReadWrite)
-- Use of a lock/cv in order to protect the shared file among different threads
+- Use of a lock/cv in order to protect the shared file among different threads (More info in the [Design](#design) chapter)
 - Handling of the ```O_APPEND``` flag
 
 ## read
@@ -798,3 +908,6 @@ sys_dup2(int oldfd, int newfd, int *errp) {
 }
 ```
 dup2 just duplicate the already present openfile that resides into ```fileTable[oldFd]```. The new 'copy' of this file is put into ```fileTable[newFd]```.
+
+# Testing on Shell
+![shell](shell.png)
