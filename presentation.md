@@ -3,7 +3,7 @@
 - [Problem Definition](#problem-definition)
 - [Design](#design)
 - [Workload Division](#workload-division)
-- [Issues](#problems)
+- [Issues](#issues)
 - [Syscalls Implementation](#syscalls-implementation)
 - [Testing on Shell](#testing-on-shell)
 
