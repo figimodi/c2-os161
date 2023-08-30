@@ -227,9 +227,7 @@ sys_execv(userptr_t program, userptr_t * args, int *errp) {
   size_t actual;
   result = copyinstr((const_userptr_t) program, progname, PATH_MAX, &actual);
   if(result) {
-      kfree(progname);
-      *errp = EIO;
-      return -1;
+      /*Error handling, check code*/
   }
     
 	/* Open the file. */
@@ -237,16 +235,13 @@ sys_execv(userptr_t program, userptr_t * args, int *errp) {
   kfree(progname);
 
 	if (result) {
-		*errp = EACCES;
-    return -1;
+		/*Error handling, check code*/
 	}
 
 	/* Create a new address space. Not a copy of the old one but a completely new as*/
 	new_as = as_create();
 	if (new_as == NULL) {
-		vfs_close(v);
-		*errp = ENOMEM;
-    return -1;
+		/*Error handling, check code*/
 	}
 
 	/* Switch to it and activate it. */
@@ -256,15 +251,7 @@ sys_execv(userptr_t program, userptr_t * args, int *errp) {
 	/* Load the executable. */
 	result = load_elf(v, &entrypoint);
 	if (result) {
-		vfs_close(v);
-    /* Go back to initial addres space and destroy new one */
-    as_deactivate();
-    proc_setas(old_as);
-    as_activate();
-    as_destroy(new_as);
-		
-    *errp = EACCES;
-    return -1;
+		/*Error handling, check code*/
 	}
 
 	/* Done with the file now. */
@@ -273,14 +260,7 @@ sys_execv(userptr_t program, userptr_t * args, int *errp) {
 	/* Define the user stack in the address space */
 	result = as_define_stack(new_as, &stackptr);
 	if (result) {
-    /* Go back to initial addres space and destroy new one */
-    as_deactivate();
-    proc_setas(old_as);
-    as_activate();
-    as_destroy(new_as);
-		
-    *errp = ENOMEM;
-    return -1;
+    /*Error handling, check code*/
 	}
 
  /* Both entry point and stack are now set for the new address space */
@@ -302,28 +282,20 @@ sys_execv(userptr_t program, userptr_t * args, int *errp) {
 
     /* Check max size */
     if(arg_length > ARG_MAX){
-      kprintf("Argments are too big. Max total size is %d\n", ARG_MAX);
-      *errp = E2BIG;
-      return -1;
+      /*Error handling, check code*/
     }
 
     /* Save args in kernel buffers */
     char ** kargs =kmalloc(argc * sizeof(char *));
 
     if(kargs == NULL){
-      as_destroy(new_as);
-      *errp = ENOMEM;
-      return -1;
+      /*Error handling, check code*/
     }
 
     for(i=0; i<argc; i++){
       kargs[i] = kmalloc(128);
       if (kargs[i] == NULL){
-        kprintf("Couldn't allocate memory in kernel for argument passing\n");
-        kfree_kargs(kargs, i-1);
-        as_destroy(new_as);
-        *errp = ENOMEM;
-        return -1;
+        /*Error handling, check code*/
       }
     }
 
@@ -333,22 +305,14 @@ sys_execv(userptr_t program, userptr_t * args, int *errp) {
       /* Hope we fit */
       result = copyinstr((userptr_t)args[i], kargs[i], 128, &actual);
       if(result){
-        kprintf("Copy argument from user to kernel did not work. Aborting\n");
-        kfree_kargs(kargs, argc);
-        as_destroy(new_as);
-        *errp = EIO;
-        return -1;
+        /*Error handling, check code*/
       }
     }
 
     stackargs = (int*)kmalloc((argc+1) * sizeof(int *));
 
     if(stackargs == NULL){
-      kprintf("Couldnt allocate memory in kernel to save new addresses. Aborting\n");
-      kfree_kargs(kargs, argc);
-      as_destroy(new_as);
-      *errp = ENOMEM;
-      return -1;
+      /*Error handling, check code*/
     }
 
     /* Move to new address space */
@@ -376,15 +340,7 @@ sys_execv(userptr_t program, userptr_t * args, int *errp) {
       result = copyout(kargs[i], (userptr_t)currptr, length);
 
       if (result) {
-        kprintf("Couldnt copy argv[%d] from kernel to new user space\n", i);
-        kfree_kargs(kargs, argc);
-        kfree(stackargs);
-        as_deactivate();
-        proc_setas(old_as);
-        as_activate();
-        as_destroy(new_as);
-        *errp = EIO;
-        return -1;
+        /*Error handling, check code*/
       }
 
       kfree(kargs[i]);
@@ -404,14 +360,7 @@ sys_execv(userptr_t program, userptr_t * args, int *errp) {
       result = copyout(stackargs + i, currptr, sizeof(char*));
 
       if(result){
-        kprintf("Sorry, couldnt copy address of parameter from kernel to userspace\n");
-        kfree(stackargs);
-        as_deactivate();
-        proc_setas(old_as);
-        as_activate();
-        as_destroy(new_as);
-        *errp = EIO;
-        return -1;
+        /*Error handling, check code*/
       }
     }
 
